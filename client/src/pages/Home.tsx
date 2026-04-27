@@ -120,6 +120,15 @@ export default function Home() {
     // Sort by date
     const sorted = [...txns].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+    // Build a set of timestamps that have BTC purchases
+    // so we only count USD/HKD costs that are paired with BTC buys
+    const btcBuyTimestamps = new Set<string>();
+    sorted.forEach((tx) => {
+      if (tx.currency === "BTC" && tx.amount > 0) {
+        btcBuyTimestamps.add(tx.date);
+      }
+    });
+
     let cumulativeBtc = 0;
 
     sorted.forEach((tx) => {
@@ -136,14 +145,17 @@ export default function Home() {
         const monthly = monthlyMap.get(monthKey)!;
         monthly.btc += tx.amount;
       } else if ((tx.currency === "USD" || tx.currency === "HKD") && tx.amount < 0) {
-        const usdAmount = tx.currency === "HKD" ? Math.abs(tx.amount) / 7.8 : Math.abs(tx.amount);
-        usdSpent += usdAmount;
+        // Only count this cost if it's paired with a BTC purchase at the same timestamp
+        if (btcBuyTimestamps.has(tx.date)) {
+          const usdAmount = tx.currency === "HKD" ? Math.abs(tx.amount) / 7.8 : Math.abs(tx.amount);
+          usdSpent += usdAmount;
 
-        if (!monthlyMap.has(monthKey)) {
-          monthlyMap.set(monthKey, { btc: 0, cost: 0 });
+          if (!monthlyMap.has(monthKey)) {
+            monthlyMap.set(monthKey, { btc: 0, cost: 0 });
+          }
+          const monthly = monthlyMap.get(monthKey)!;
+          monthly.cost += usdAmount;
         }
-        const monthly = monthlyMap.get(monthKey)!;
-        monthly.cost += usdAmount;
       }
 
       cumulativeData.push({
