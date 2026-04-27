@@ -255,29 +255,30 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-b from-[#0b0e11] to-[#1e2329] text-white">
       {/* Header */}
       <header className="border-b border-[#2d3139] bg-[#0b0e11] sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#f7931a] to-[#f9a825] flex items-center justify-center font-bold text-lg">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-[#f7931a] to-[#f9a825] flex items-center justify-center font-bold text-sm sm:text-lg flex-shrink-0">
               ₿
             </div>
-            <h1 className="text-2xl font-bold">BTC Portfolio Tracker</h1>
+            <h1 className="text-lg sm:text-2xl font-bold truncate">BTC Portfolio</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {transactions.length > 0 && (
               <Button
                 onClick={() => fileInputRef.current?.click()}
-                className="bg-[#2d3139] hover:bg-[#3d4149] text-white text-sm"
+                className="bg-[#2d3139] hover:bg-[#3d4149] text-white text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
               >
-                <Upload size={16} className="mr-1" />
-                Update CSV
+                <Upload size={14} className="mr-1" />
+                <span className="hidden sm:inline">Update CSV</span>
+                <span className="sm:hidden">CSV</span>
               </Button>
             )}
             <button
               onClick={() => fetchBtcPrice()}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e2329] hover:bg-[#2d3139] transition-colors"
+              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-[#1e2329] hover:bg-[#2d3139] transition-colors"
             >
-              <RefreshCw size={18} />
-              <span className="text-sm">Refresh Price</span>
+              <RefreshCw size={16} />
+              <span className="text-xs sm:text-sm hidden sm:inline">Refresh</span>
             </button>
           </div>
           <input
@@ -290,13 +291,13 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
         {/* Upload Section - only show if no data */}
         {transactions.length === 0 ? (
           <div className="mb-8">
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-[#2d3139] rounded-lg p-12 text-center cursor-pointer hover:border-[#f7931a] transition-colors"
+              className="border-2 border-dashed border-[#2d3139] rounded-lg p-6 sm:p-12 text-center cursor-pointer hover:border-[#f7931a] transition-colors"
             >
               <Upload size={48} className="mx-auto mb-4 text-[#f7931a]" />
               <h2 className="text-xl font-semibold mb-2">Upload Transaction Report</h2>
@@ -309,53 +310,53 @@ export default function Home() {
         ) : (
           <>
             {/* Dashboard Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-8">
               {/* Total BTC */}
-              <Card className="bg-[#1e2329] border-[#2d3139] p-6">
-                <p className="text-gray-400 text-sm mb-2">Total BTC Accumulated</p>
-                <p className="text-3xl font-bold text-white mb-1">{totalBtc.toFixed(6)}</p>
-                <p className="text-xs text-gray-500">₿ Bitcoin</p>
+              <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+                <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Total BTC</p>
+                <p className="text-lg sm:text-3xl font-bold text-white mb-1">{totalBtc.toFixed(6)}</p>
+                <p className="text-xs text-gray-500 hidden sm:block">₿ Bitcoin</p>
               </Card>
 
               {/* Average Cost */}
-              <Card className="bg-[#1e2329] border-[#2d3139] p-6">
-                <p className="text-gray-400 text-sm mb-2">Average Cost per BTC</p>
-                <p className="text-3xl font-bold text-white mb-1">{fmtUsd(avgCostPerBtc)}</p>
-                <p className="text-xs text-gray-500">All amounts converted to USD</p>
+              <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+                <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Avg Cost/BTC</p>
+                <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(avgCostPerBtc)}</p>
+                <p className="text-xs text-gray-500 hidden sm:block">All amounts in USD</p>
               </Card>
 
               {/* Current Price */}
-              <Card className="bg-[#1e2329] border-[#2d3139] p-6">
-                <p className="text-gray-400 text-sm mb-2">Current BTC Price</p>
-                <p className="text-3xl font-bold text-white mb-1">{fmtUsd(currentBtcPrice)}</p>
-                <p className="text-xs text-gray-500">Real-time from CoinGecko</p>
+              <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+                <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">BTC Price</p>
+                <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(currentBtcPrice)}</p>
+                <p className="text-xs text-gray-500 hidden sm:block">Real-time CoinGecko</p>
               </Card>
 
               {/* Total Spent */}
-              <Card className="bg-[#1e2329] border-[#2d3139] p-6">
-                <p className="text-gray-400 text-sm mb-2">Total USD Spent</p>
-                <p className="text-3xl font-bold text-white mb-1">{fmtUsd(totalUsdSpent)}</p>
-                <p className="text-xs text-gray-500">Cost Basis (HKD converted at {HKD_TO_USD})</p>
+              <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+                <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Total Spent</p>
+                <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(totalUsdSpent)}</p>
+                <p className="text-xs text-gray-500 hidden sm:block">HKD converted at {HKD_TO_USD}</p>
               </Card>
 
               {/* Portfolio Value */}
-              <Card className="bg-[#1e2329] border-[#2d3139] p-6">
-                <p className="text-gray-400 text-sm mb-2">Portfolio Value</p>
-                <p className="text-3xl font-bold text-white mb-1">{fmtUsd(portfolioValue)}</p>
-                <p className="text-xs text-gray-500">Current Market Value</p>
+              <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+                <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Portfolio Value</p>
+                <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(portfolioValue)}</p>
+                <p className="text-xs text-gray-500 hidden sm:block">Current Market Value</p>
               </Card>
 
               {/* P&L */}
-              <Card className={`${isProfitable ? "bg-[#1e3a2b]" : "bg-[#3a1e1e]"} border-[#2d3139] p-6`}>
-                <p className="text-gray-400 text-sm mb-2">Unrealized P&L</p>
+              <Card className={`${isProfitable ? "bg-[#1e3a2b]" : "bg-[#3a1e1e]"} border-[#2d3139] p-3 sm:p-6 col-span-2 lg:col-span-1`}>
+                <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Unrealized P&L</p>
                 <div className="flex items-center gap-2">
                   {isProfitable ? (
-                    <TrendingUp size={24} className="text-[#00b96b]" />
+                    <TrendingUp size={20} className="text-[#00b96b] flex-shrink-0" />
                   ) : (
-                    <TrendingDown size={24} className="text-[#f6465d]" />
+                    <TrendingDown size={20} className="text-[#f6465d] flex-shrink-0" />
                   )}
-                  <div>
-                    <p className={`text-3xl font-bold ${isProfitable ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
+                  <div className="min-w-0">
+                    <p className={`text-lg sm:text-3xl font-bold ${isProfitable ? "text-[#00b96b]" : "text-[#f6465d]"} truncate`}>
                       {isProfitable ? "+" : "-"}{fmtUsd(Math.abs(pnlUsd))}
                     </p>
                     <p className={`text-xs ${isProfitable ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
@@ -367,11 +368,11 @@ export default function Home() {
             </div>
 
             {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 mb-4 sm:mb-8">
               {/* Cumulative BTC Chart with Avg Cost line */}
-              <Card className="bg-[#1e2329] border-[#2d3139] p-6">
-                <h3 className="text-lg font-semibold mb-4">Cumulative BTC Holdings & Avg Cost</h3>
-                <ResponsiveContainer width="100%" height={300}>
+              <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+                <h3 className="text-sm sm:text-lg font-semibold mb-2 sm:mb-4">BTC Holdings & Avg Cost</h3>
+                <ResponsiveContainer width="100%" height={250}>
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" />
                     <XAxis dataKey="date" stroke="#888" fontSize={11} />
@@ -411,9 +412,9 @@ export default function Home() {
               </Card>
 
               {/* Cost Basis vs Current Value */}
-              <Card className="bg-[#1e2329] border-[#2d3139] p-6">
-                <h3 className="text-lg font-semibold mb-4">Cost Basis vs Current Value</h3>
-                <ResponsiveContainer width="100%" height={300}>
+              <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+                <h3 className="text-sm sm:text-lg font-semibold mb-2 sm:mb-4">Cost Basis vs Current Value</h3>
+                <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={[
                     {
                       name: "Portfolio",
@@ -437,27 +438,27 @@ export default function Home() {
             </div>
 
             {/* Monthly Breakdown Table */}
-            <Card className="bg-[#1e2329] border-[#2d3139] p-6">
-              <h3 className="text-lg font-semibold mb-4">Monthly Breakdown</h3>
+            <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+              <h3 className="text-sm sm:text-lg font-semibold mb-2 sm:mb-4">Monthly Breakdown</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-[#2d3139]">
-                      <th className="text-left py-3 px-4 text-gray-400">Month</th>
-                      <th className="text-right py-3 px-4 text-gray-400">BTC Bought</th>
-                      <th className="text-right py-3 px-4 text-gray-400">Total Cost (USD)</th>
-                      <th className="text-right py-3 px-4 text-gray-400">Avg Price/BTC</th>
-                      <th className="text-right py-3 px-4 text-gray-400">Cumulative BTC</th>
+                      <th className="text-left py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm">Month</th>
+                      <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm">BTC</th>
+                      <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm">Cost</th>
+                      <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm">Avg Price</th>
+                      <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm hidden sm:table-cell">Cumulative</th>
                     </tr>
                   </thead>
                   <tbody>
                     {monthlyData.map((row, idx) => (
                       <tr key={idx} className="border-b border-[#2d3139] hover:bg-[#2d3139] transition-colors">
-                        <td className="py-3 px-4">{row.month}</td>
-                        <td className="text-right py-3 px-4 text-[#f7931a]">{row.btcBought.toFixed(6)}</td>
-                        <td className="text-right py-3 px-4">{fmtUsd(row.totalCost)}</td>
-                        <td className="text-right py-3 px-4">{fmtUsd(row.avgPrice)}</td>
-                        <td className="text-right py-3 px-4 font-semibold">{row.cumulativeBtc.toFixed(6)}</td>
+                        <td className="py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm">{row.month}</td>
+                        <td className="text-right py-2 sm:py-3 px-2 sm:px-4 text-[#f7931a] text-xs sm:text-sm">{row.btcBought.toFixed(4)}</td>
+                        <td className="text-right py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm">{fmtUsd(row.totalCost)}</td>
+                        <td className="text-right py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm">{fmtUsd(row.avgPrice)}</td>
+                        <td className="text-right py-2 sm:py-3 px-2 sm:px-4 font-semibold text-xs sm:text-sm hidden sm:table-cell">{row.cumulativeBtc.toFixed(6)}</td>
                       </tr>
                     ))}
                   </tbody>
