@@ -20,6 +20,16 @@ interface MonthlyData {
   cumulativeBtc: number;
 }
 
+const HKD_TO_USD = 7.8;
+
+// Format USD with thousand separators and 2 decimal places
+const fmtUsd = (value: number) =>
+  "$" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Format USD for large numbers (no decimals)
+const fmtUsdInt = (value: number) =>
+  "$" + Math.round(value).toLocaleString("en-US");
+
 export default function Home() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [totalBtc, setTotalBtc] = useState(0);
@@ -33,6 +43,24 @@ export default function Home() {
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load saved portfolio from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("btc_portfolio");
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        setTransactions(data.transactions || []);
+        setTotalBtc(data.totalBtc || 0);
+        setTotalUsdSpent(data.totalUsdSpent || 0);
+        setAvgCostPerBtc(data.avgCostPerBtc || 0);
+        setMonthlyData(data.monthlyData || []);
+        setChartData(data.chartData || []);
+      } catch (e) {
+        console.error("Error loading saved portfolio:", e);
+      }
+    }
+  }, []);
 
   // Fetch BTC price from CoinGecko
   const fetchBtcPrice = async () => {
@@ -66,7 +94,6 @@ export default function Home() {
     reader.onload = (event) => {
       const csv = event.target?.result as string;
       const lines = csv.split("\n");
-      const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
 
       const parsedTransactions: Transaction[] = [];
       for (let i = 1; i < lines.length; i++) {
@@ -130,6 +157,7 @@ export default function Home() {
     });
 
     let cumulativeBtc = 0;
+    let cumulativeCost = 0;
 
     sorted.forEach((tx) => {
       const date = new Date(tx.date);
@@ -144,11 +172,21 @@ export default function Home() {
         }
         const monthly = monthlyMap.get(monthKey)!;
         monthly.btc += tx.amount;
+
+        // Add chart data point after each BTC buy (with running avg cost)
+        cumulativeData.push({
+          date: tx.date.split(" ")[0],
+          cumulativeBtc: cumulativeBtc,
+          costBasis: cumulativeCost,
+          avgCost: cumulativeBtc > 0 ? cumulativeCost / cumulativeBtc : 0,
+        });
       } else if ((tx.currency === "USD" || tx.currency === "HKD") && tx.amount < 0) {
         // Only count this cost if it's paired with a BTC purchase at the same timestamp
+        // All HKD amounts are converted to USD
         if (btcBuyTimestamps.has(tx.date)) {
-          const usdAmount = tx.currency === "HKD" ? Math.abs(tx.amount) / 7.8 : Math.abs(tx.amount);
+          const usdAmount = tx.currency === "HKD" ? Math.abs(tx.amount) / HKD_TO_USD : Math.abs(tx.amount);
           usdSpent += usdAmount;
+          cumulativeCost += usdAmount;
 
           if (!monthlyMap.has(monthKey)) {
             monthlyMap.set(monthKey, { btc: 0, cost: 0 });
@@ -157,12 +195,6 @@ export default function Home() {
           monthly.cost += usdAmount;
         }
       }
-
-      cumulativeData.push({
-        date: tx.date.split(" ")[0],
-        cumulativeBtc: cumulativeBtc,
-        costBasis: usdSpent,
-      });
     });
 
     setTotalBtc(btc);
@@ -192,10 +224,21 @@ export default function Home() {
 
     setMonthlyData(monthlyArray);
     setChartData(cumulativeData);
+
+    // Save portfolio to localStorage so it persists
+    localStorage.setItem("btc_portfolio", JSON.stringify({
+      transactions: txns,
+      totalBtc: btc,
+      totalUsdSpent: usdSpent,
+      avgCostPerBtc: avgCost,
+      monthlyData: monthlyArray,
+      chartData: cumulativeData,
+    }));
   };
 
   // Update portfolio value when price changes
   useEffect(() => {
+    if (totalBtc === 0) return;
     const value = totalBtc * currentBtcPrice;
     setPortfolioValue(value);
 
@@ -219,18 +262,36 @@ export default function Home() {
             </div>
             <h1 className="text-2xl font-bold">BTC Portfolio Tracker</h1>
           </div>
-          <button
-            onClick={() => fetchBtcPrice()}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e2329] hover:bg-[#2d3139] transition-colors"
-          >
-            <RefreshCw size={18} />
-            <span className="text-sm">Refresh Price</span>
-          </button>
+          <div className="flex items-center gap-3">
+            {transactions.length > 0 && (
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-[#2d3139] hover:bg-[#3d4149] text-white text-sm"
+              >
+                <Upload size={16} className="mr-1" />
+                Update CSV
+              </Button>
+            )}
+            <button
+              onClick={() => fetchBtcPrice()}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e2329] hover:bg-[#2d3139] transition-colors"
+            >
+              <RefreshCw size={18} />
+              <span className="text-sm">Refresh Price</span>
+            </button>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Upload Section */}
+        {/* Upload Section - only show if no data */}
         {transactions.length === 0 ? (
           <div className="mb-8">
             <div
@@ -243,13 +304,6 @@ export default function Home() {
               <Button className="bg-[#f7931a] hover:bg-[#f9a825] text-black font-semibold">
                 Select CSV File
               </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
             </div>
           </div>
         ) : (
@@ -266,28 +320,28 @@ export default function Home() {
               {/* Average Cost */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-6">
                 <p className="text-gray-400 text-sm mb-2">Average Cost per BTC</p>
-                <p className="text-3xl font-bold text-white mb-1">${avgCostPerBtc.toFixed(2)}</p>
-                <p className="text-xs text-gray-500">USD</p>
+                <p className="text-3xl font-bold text-white mb-1">{fmtUsd(avgCostPerBtc)}</p>
+                <p className="text-xs text-gray-500">All amounts converted to USD</p>
               </Card>
 
               {/* Current Price */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-6">
                 <p className="text-gray-400 text-sm mb-2">Current BTC Price</p>
-                <p className="text-3xl font-bold text-white mb-1">${currentBtcPrice.toLocaleString()}</p>
+                <p className="text-3xl font-bold text-white mb-1">{fmtUsd(currentBtcPrice)}</p>
                 <p className="text-xs text-gray-500">Real-time from CoinGecko</p>
               </Card>
 
               {/* Total Spent */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-6">
                 <p className="text-gray-400 text-sm mb-2">Total USD Spent</p>
-                <p className="text-3xl font-bold text-white mb-1">${totalUsdSpent.toFixed(2)}</p>
-                <p className="text-xs text-gray-500">Cost Basis</p>
+                <p className="text-3xl font-bold text-white mb-1">{fmtUsd(totalUsdSpent)}</p>
+                <p className="text-xs text-gray-500">Cost Basis (HKD converted at {HKD_TO_USD})</p>
               </Card>
 
               {/* Portfolio Value */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-6">
                 <p className="text-gray-400 text-sm mb-2">Portfolio Value</p>
-                <p className="text-3xl font-bold text-white mb-1">${portfolioValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                <p className="text-3xl font-bold text-white mb-1">{fmtUsd(portfolioValue)}</p>
                 <p className="text-xs text-gray-500">Current Market Value</p>
               </Card>
 
@@ -302,7 +356,7 @@ export default function Home() {
                   )}
                   <div>
                     <p className={`text-3xl font-bold ${isProfitable ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
-                      ${Math.abs(pnlUsd).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      {isProfitable ? "+" : "-"}{fmtUsd(Math.abs(pnlUsd))}
                     </p>
                     <p className={`text-xs ${isProfitable ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
                       {isProfitable ? "+" : "-"}{Math.abs(pnlPercent).toFixed(2)}%
@@ -314,25 +368,43 @@ export default function Home() {
 
             {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-              {/* Cumulative BTC Chart */}
+              {/* Cumulative BTC Chart with Avg Cost line */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-6">
-                <h3 className="text-lg font-semibold mb-4">Cumulative BTC Holdings</h3>
+                <h3 className="text-lg font-semibold mb-4">Cumulative BTC Holdings & Avg Cost</h3>
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" />
-                    <XAxis dataKey="date" stroke="#888" />
-                    <YAxis stroke="#888" />
+                    <XAxis dataKey="date" stroke="#888" fontSize={11} />
+                    <YAxis yAxisId="btc" stroke="#f7931a" fontSize={11} />
+                    <YAxis yAxisId="cost" orientation="right" stroke="#8884d8" fontSize={11}
+                      tickFormatter={(v: number) => fmtUsdInt(v)} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139" }}
-                      formatter={(value: any) => value.toFixed(6)}
+                      contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139", fontSize: 12 }}
+                      formatter={(value: any, name: string) => {
+                        if (name === "BTC Holdings") return value.toFixed(6);
+                        if (name === "Avg Cost/BTC") return fmtUsd(value);
+                        return value;
+                      }}
                     />
                     <Legend />
                     <Line
+                      yAxisId="btc"
                       type="monotone"
                       dataKey="cumulativeBtc"
                       stroke="#f7931a"
                       dot={false}
                       name="BTC Holdings"
+                      strokeWidth={2}
+                    />
+                    <Line
+                      yAxisId="cost"
+                      type="monotone"
+                      dataKey="avgCost"
+                      stroke="#8884d8"
+                      dot={false}
+                      name="Avg Cost/BTC"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -351,10 +423,10 @@ export default function Home() {
                   ]}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" />
                     <XAxis dataKey="name" stroke="#888" />
-                    <YAxis stroke="#888" />
+                    <YAxis stroke="#888" tickFormatter={(v: number) => fmtUsdInt(v)} />
                     <Tooltip
                       contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139" }}
-                      formatter={(value: any) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
+                      formatter={(value: any) => fmtUsd(value)}
                     />
                     <Legend />
                     <Bar dataKey="Cost Basis" fill="#888" />
@@ -383,8 +455,8 @@ export default function Home() {
                       <tr key={idx} className="border-b border-[#2d3139] hover:bg-[#2d3139] transition-colors">
                         <td className="py-3 px-4">{row.month}</td>
                         <td className="text-right py-3 px-4 text-[#f7931a]">{row.btcBought.toFixed(6)}</td>
-                        <td className="text-right py-3 px-4">${row.totalCost.toFixed(2)}</td>
-                        <td className="text-right py-3 px-4">${row.avgPrice.toFixed(2)}</td>
+                        <td className="text-right py-3 px-4">{fmtUsd(row.totalCost)}</td>
+                        <td className="text-right py-3 px-4">{fmtUsd(row.avgPrice)}</td>
                         <td className="text-right py-3 px-4 font-semibold">{row.cumulativeBtc.toFixed(6)}</td>
                       </tr>
                     ))}
@@ -392,23 +464,6 @@ export default function Home() {
                 </table>
               </div>
             </Card>
-
-            {/* Upload New File Button */}
-            <div className="mt-8 text-center">
-              <Button
-                onClick={() => {
-                  setTransactions([]);
-                  setTotalBtc(0);
-                  setTotalUsdSpent(0);
-                  setAvgCostPerBtc(0);
-                  setMonthlyData([]);
-                  setChartData([]);
-                }}
-                className="bg-[#2d3139] hover:bg-[#3d4149] text-white"
-              >
-                Upload Different File
-              </Button>
-            </div>
           </>
         )}
       </main>
