@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Upload, TrendingUp, TrendingDown, RefreshCw, Calendar, Repeat, DollarSign } from "lucide-react";
+import { Upload, TrendingUp, TrendingDown, RefreshCw, Calendar, Repeat, DollarSign, ArrowUpDown, ArrowUp, ArrowDown, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Scatter, Area,
 } from "recharts";
+import { useIsMobile } from "@/hooks/useMobile";
 
 interface Transaction {
   date: string;
@@ -40,6 +41,10 @@ interface PricePoint {
   buyCost?: number | null;
 }
 
+type SortField = "date" | "method" | "amount" | "currency" | "status";
+type SortDir = "asc" | "desc";
+type ChartRange = "1M" | "3M" | "6M" | "ALL";
+
 const HKD_TO_USD = 7.8;
 
 // Format USD with thousand separators and 2 decimal places
@@ -72,16 +77,37 @@ const daysUntil = (target: Date): number => {
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 };
 
-// Custom dot for buy markers on the price chart
+// Cutoff date for a given range
+const getRangeCutoff = (range: ChartRange): Date => {
+  const now = new Date();
+  switch (range) {
+    case "1M": return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    case "3M": return new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+    case "6M": return new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+    case "ALL": return new Date(2020, 0, 1);
+  }
+};
+
+// Custom dot for buy markers on the price chart — size scales with buy cost
 const BuyMarkerDot = (props: any) => {
   const { cx, cy, payload } = props;
   if (!payload?.buyPrice || !cx || !cy) return null;
+
+  // Scale radius based on buy cost: $100 → r=8, $500 → r=12, $1000+ → r=16
+  const cost = payload.buyCost || 0;
+  const minR = 8;
+  const maxR = 18;
+  const r = Math.min(maxR, Math.max(minR, minR + (cost / 100) * 1.5));
+  const innerR = r * 0.6;
+  const fontSize = Math.max(7, Math.min(12, r * 0.7));
+
   return (
     <g>
-      <circle cx={cx} cy={cy} r={10} fill="#f7931a" fillOpacity={0.25} stroke="none" />
-      <circle cx={cx} cy={cy} r={6} fill="#f7931a" stroke="#fff" strokeWidth={1.5} />
-      <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="middle"
-        fill="#000" fontSize={8} fontWeight="bold">₿</text>
+      <circle cx={cx} cy={cy} r={r + 3} fill="#f7931a" fillOpacity={0.18} stroke="none" />
+      <circle cx={cx} cy={cy} r={r} fill="#f7931a" fillOpacity={0.35} stroke="none" />
+      <circle cx={cx} cy={cy} r={innerR} fill="#f7931a" stroke="#fff" strokeWidth={1.5} />
+      <text x={cx} y={cy + 0.5} textAnchor="middle" dominantBaseline="middle"
+        fill="#000" fontSize={fontSize} fontWeight="bold">B</text>
     </g>
   );
 };
@@ -100,7 +126,7 @@ const PriceTrendTooltip = ({ active, payload, label }: any) => {
       </p>
       {data.buyPrice && (
         <div className="mt-1.5 pt-1.5 border-t border-[#2d3139]">
-          <p className="text-[#f7931a] font-semibold mb-0.5">🟠 Buy Executed</p>
+          <p className="text-[#f7931a] font-semibold mb-0.5">Buy Executed</p>
           <p className="text-white">Amount: <span className="text-[#f7931a]">{data.buyBtc?.toFixed(6)} BTC</span></p>
           <p className="text-white">Cost: <span className="text-gray-300">{fmtUsd(data.buyCost || 0)}</span></p>
         </div>
@@ -110,6 +136,7 @@ const PriceTrendTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function Home() {
+  const isMobile = useIsMobile();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [totalBtc, setTotalBtc] = useState(0);
   const [totalUsdSpent, setTotalUsdSpent] = useState(0);
@@ -129,6 +156,18 @@ export default function Home() {
 
   // Extracted buy points from transactions
   const [buyPoints, setBuyPoints] = useState<BtcBuyPoint[]>([]);
+
+  // Chart range filter — default 6M (shows from ~Sep 2025)
+  const [chartRange, setChartRange] = useState<ChartRange>("6M");
+
+  // Transaction table state
+  const [txSortField, setTxSortField] = useState<SortField>("date");
+  const [txSortDir, setTxSortDir] = useState<SortDir>("desc");
+  const [txFilters, setTxFilters] = useState<Record<SortField, string>>({
+    date: "", method: "", amount: "", currency: "", status: "",
+  });
+  const [txPage, setTxPage] = useState(0);
+  const TX_PER_PAGE = 20;
 
   // Load saved portfolio from localStorage on mount
   useEffect(() => {
@@ -223,7 +262,7 @@ export default function Home() {
       try { setPriceHistory(JSON.parse(cached)); } catch { /* ignore */ }
     }
 
-    // Retry once after 5 s if this was the first attempt and we have no data
+    // Retry after 5 s if this was an early attempt and we have no data
     if (retryCount < 2 && !cached) {
       setPriceHistoryLoading(true);
       setTimeout(() => fetchPriceHistory(retryCount + 1), 5000);
@@ -320,7 +359,6 @@ export default function Home() {
     const sorted = [...txns].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // Build a set of timestamps that have BTC purchases
-    // so we only count USD/HKD costs that are paired with BTC buys
     const btcBuyTimestamps = new Set<string>();
     sorted.forEach((tx) => {
       if (tx.currency === "BTC" && tx.amount > 0) {
@@ -329,7 +367,6 @@ export default function Home() {
     });
 
     // Build buy points for the price trend chart
-    // Group by timestamp: aggregate BTC amounts and USD costs
     const buyByTimestamp = new Map<string, { btc: number; cost: number }>();
 
     let cumulativeBtc = 0;
@@ -340,7 +377,6 @@ export default function Home() {
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
       if (tx.currency === "BTC" && tx.amount > 0) {
-        // Skip rewards (they have no paired cost)
         if (tx.method === "Rewards") return;
 
         btc += tx.amount;
@@ -352,13 +388,11 @@ export default function Home() {
         const monthly = monthlyMap.get(monthKey)!;
         monthly.btc += tx.amount;
 
-        // Track buy for price chart
         if (!buyByTimestamp.has(tx.date)) {
           buyByTimestamp.set(tx.date, { btc: 0, cost: 0 });
         }
         buyByTimestamp.get(tx.date)!.btc += tx.amount;
 
-        // Add chart data point after each BTC buy (with running avg cost)
         cumulativeData.push({
           date: tx.date.split(" ")[0],
           cumulativeBtc: cumulativeBtc,
@@ -366,8 +400,6 @@ export default function Home() {
           avgCost: cumulativeBtc > 0 ? cumulativeCost / cumulativeBtc : 0,
         });
       } else if ((tx.currency === "USD" || tx.currency === "HKD") && tx.amount < 0) {
-        // Only count this cost if it's paired with a BTC purchase at the same timestamp
-        // All HKD amounts are converted to USD
         if (btcBuyTimestamps.has(tx.date)) {
           const usdAmount = tx.currency === "HKD" ? Math.abs(tx.amount) / HKD_TO_USD : Math.abs(tx.amount);
           usdSpent += usdAmount;
@@ -379,7 +411,6 @@ export default function Home() {
           const monthly = monthlyMap.get(monthKey)!;
           monthly.cost += usdAmount;
 
-          // Track cost for price chart
           if (!buyByTimestamp.has(tx.date)) {
             buyByTimestamp.set(tx.date, { btc: 0, cost: 0 });
           }
@@ -421,7 +452,6 @@ export default function Home() {
     const avgCost = btc > 0 ? usdSpent / btc : 0;
     setAvgCostPerBtc(avgCost);
 
-    // Calculate monthly breakdown
     const monthlyArray: MonthlyData[] = [];
     monthlyMap.forEach((value, key) => {
       monthlyArray.push({
@@ -433,7 +463,6 @@ export default function Home() {
       });
     });
 
-    // Calculate cumulative BTC for each month
     let cumBtc = 0;
     monthlyArray.forEach((m) => {
       cumBtc += m.btcBought;
@@ -443,7 +472,6 @@ export default function Home() {
     setMonthlyData(monthlyArray);
     setChartData(cumulativeData);
 
-    // Save portfolio to localStorage so it persists
     localStorage.setItem("btc_portfolio", JSON.stringify({
       transactions: txns,
       totalBtc: btc,
@@ -455,24 +483,34 @@ export default function Home() {
     }));
   };
 
-  // Merge price history with buy points for the combined chart
+  // Merge price history with buy points, then filter by selected range
   const priceTrendData = useMemo(() => {
     if (priceHistory.length === 0) return [];
+
+    const cutoff = getRangeCutoff(chartRange);
+    const cutoffTs = cutoff.getTime();
 
     // Create a map of buy points by date
     const buyMap = new Map<string, BtcBuyPoint>();
     buyPoints.forEach((bp) => buyMap.set(bp.date, bp));
 
-    return priceHistory.map((p) => {
-      const buy = buyMap.get(p.date);
-      return {
-        ...p,
-        buyPrice: buy ? buy.price : null,
-        buyBtc: buy ? buy.btcAmount : null,
-        buyCost: buy ? buy.usdCost : null,
-      };
-    });
-  }, [priceHistory, buyPoints]);
+    return priceHistory
+      .filter((p) => p.timestamp >= cutoffTs)
+      .map((p) => {
+        const buy = buyMap.get(p.date);
+        return {
+          ...p,
+          buyPrice: buy ? buy.price : null,
+          buyBtc: buy ? buy.btcAmount : null,
+          buyCost: buy ? buy.usdCost : null,
+        };
+      });
+  }, [priceHistory, buyPoints, chartRange]);
+
+  // Count visible buys in current range
+  const visibleBuys = useMemo(() => {
+    return priceTrendData.filter((p) => p.buyPrice !== null).length;
+  }, [priceTrendData]);
 
   // Update portfolio value when price changes
   useEffect(() => {
@@ -499,6 +537,104 @@ export default function Home() {
     return Math.ceil((now.getTime() - first.getTime()) / (7 * 24 * 60 * 60 * 1000));
   }, [buyPoints]);
 
+  // ---- Transaction table logic ----
+  const handleTxSort = (field: SortField) => {
+    if (txSortField === field) {
+      setTxSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setTxSortField(field);
+      setTxSortDir(field === "date" ? "desc" : "asc");
+    }
+    setTxPage(0);
+  };
+
+  const handleTxFilterChange = (field: SortField, value: string) => {
+    setTxFilters((prev) => ({ ...prev, [field]: value }));
+    setTxPage(0);
+  };
+
+  const filteredSortedTxns = useMemo(() => {
+    let result = [...transactions];
+
+    // Apply filters
+    if (txFilters.date) {
+      const q = txFilters.date.toLowerCase();
+      result = result.filter((t) => t.date.toLowerCase().includes(q));
+    }
+    if (txFilters.method) {
+      const q = txFilters.method.toLowerCase();
+      result = result.filter((t) => t.method.toLowerCase().includes(q));
+    }
+    if (txFilters.amount) {
+      const q = txFilters.amount.toLowerCase();
+      result = result.filter((t) => t.amount.toString().includes(q));
+    }
+    if (txFilters.currency) {
+      const q = txFilters.currency.toLowerCase();
+      result = result.filter((t) => t.currency.toLowerCase().includes(q));
+    }
+    if (txFilters.status) {
+      const q = txFilters.status.toLowerCase();
+      result = result.filter((t) => t.status.toLowerCase().includes(q));
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let cmp = 0;
+      switch (txSortField) {
+        case "date":
+          cmp = new Date(a.date).getTime() - new Date(b.date).getTime();
+          break;
+        case "method":
+          cmp = a.method.localeCompare(b.method);
+          break;
+        case "amount":
+          cmp = a.amount - b.amount;
+          break;
+        case "currency":
+          cmp = a.currency.localeCompare(b.currency);
+          break;
+        case "status":
+          cmp = a.status.localeCompare(b.status);
+          break;
+      }
+      return txSortDir === "asc" ? cmp : -cmp;
+    });
+
+    return result;
+  }, [transactions, txFilters, txSortField, txSortDir]);
+
+  const txTotalPages = Math.max(1, Math.ceil(filteredSortedTxns.length / TX_PER_PAGE));
+  const pagedTxns = filteredSortedTxns.slice(txPage * TX_PER_PAGE, (txPage + 1) * TX_PER_PAGE);
+
+  const hasActiveFilters = Object.values(txFilters).some((v) => v !== "");
+
+  // Sort icon helper
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (txSortField !== field) return <ArrowUpDown size={12} className="text-gray-600 ml-1 inline" />;
+    return txSortDir === "asc"
+      ? <ArrowUp size={12} className="text-[#f7931a] ml-1 inline" />
+      : <ArrowDown size={12} className="text-[#f7931a] ml-1 inline" />;
+  };
+
+  // Range button styling
+  const rangeBtn = (range: ChartRange) => {
+    const active = chartRange === range;
+    return (
+      <button
+        key={range}
+        onClick={() => setChartRange(range)}
+        className={`px-2.5 sm:px-3 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-all ${
+          active
+            ? "bg-[#f7931a] text-black shadow-sm"
+            : "bg-[#2d3139] text-gray-400 hover:bg-[#3d4149] hover:text-white"
+        }`}
+      >
+        {range === "ALL" ? "All" : range}
+      </button>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0b0e11] to-[#1e2329] text-white">
       {/* Header */}
@@ -506,7 +642,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-[#f7931a] to-[#f9a825] flex items-center justify-center font-bold text-sm sm:text-lg flex-shrink-0">
-              ₿
+              B
             </div>
             <h1 className="text-lg sm:text-2xl font-bold truncate">BTC Portfolio</h1>
           </div>
@@ -660,7 +796,7 @@ export default function Home() {
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
                 <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Total BTC</p>
                 <p className="text-lg sm:text-3xl font-bold text-white mb-1">{totalBtc.toFixed(6)}</p>
-                <p className="text-xs text-gray-500 hidden sm:block">₿ Bitcoin</p>
+                <p className="text-xs text-gray-500 hidden sm:block">B Bitcoin</p>
               </Card>
 
               {/* Average Cost */}
@@ -714,30 +850,36 @@ export default function Home() {
 
             {/* BTC Price Trend Chart with Buy Markers - Full Width */}
             <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6 mb-4 sm:mb-8">
-              <div className="flex items-center justify-between mb-2 sm:mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2 sm:mb-4">
                 <div>
                   <h3 className="text-sm sm:text-lg font-semibold">BTC Price & Your Buys</h3>
                   <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5">
-                    Price history with buy markers showing when you bought
+                    Price history with buy markers — larger dots = bigger buys
                   </p>
                 </div>
-                {buyPoints.length > 0 && (
-                  <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-gray-400">
-                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#f7931a]" />
-                    <span>{buyPoints.length} buys</span>
+                <div className="flex items-center gap-2">
+                  {/* Range filter buttons */}
+                  <div className="flex items-center gap-1 bg-[#0b0e11] rounded-lg p-1">
+                    {(["1M", "3M", "6M", "ALL"] as ChartRange[]).map((r) => rangeBtn(r))}
                   </div>
-                )}
+                  {buyPoints.length > 0 && (
+                    <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-gray-400 ml-1">
+                      <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#f7931a]" />
+                      <span>{visibleBuys} buys</span>
+                    </div>
+                  )}
+                </div>
               </div>
               {priceHistoryLoading ? (
-                <div className="flex items-center justify-center h-[250px] sm:h-[350px]">
+                <div className="flex items-center justify-center h-[280px] sm:h-[400px]">
                   <div className="flex items-center gap-2 text-gray-400">
                     <RefreshCw size={16} className="animate-spin" />
                     <span className="text-sm">Loading price data...</span>
                   </div>
                 </div>
               ) : priceTrendData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={window.innerWidth < 640 ? 280 : 380}>
-                  <ComposedChart data={priceTrendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={isMobile ? 300 : 420}>
+                  <ComposedChart data={priceTrendData} margin={{ top: 20, right: 10, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#f7931a" stopOpacity={0.15} />
@@ -789,7 +931,7 @@ export default function Home() {
                   </ComposedChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-[250px] sm:h-[350px] text-gray-500 text-sm">
+                <div className="flex items-center justify-center h-[280px] sm:h-[400px] text-gray-500 text-sm">
                   Unable to load price data. Try refreshing.
                 </div>
               )}
@@ -866,7 +1008,7 @@ export default function Home() {
             </div>
 
             {/* Monthly Breakdown Table */}
-            <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+            <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6 mb-4 sm:mb-8">
               <h3 className="text-sm sm:text-lg font-semibold mb-2 sm:mb-4">Monthly Breakdown</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -892,6 +1034,219 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
+            </Card>
+
+            {/* Transaction Table */}
+            <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 sm:mb-4">
+                <div>
+                  <h3 className="text-sm sm:text-lg font-semibold">All Transactions</h3>
+                  <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5">
+                    {filteredSortedTxns.length} of {transactions.length} transactions
+                    {hasActiveFilters && " (filtered)"}
+                  </p>
+                </div>
+                {hasActiveFilters && (
+                  <button
+                    onClick={() => {
+                      setTxFilters({ date: "", method: "", amount: "", currency: "", status: "" });
+                      setTxPage(0);
+                    }}
+                    className="flex items-center gap-1 text-[10px] sm:text-xs text-gray-400 hover:text-white transition-colors"
+                  >
+                    <X size={12} />
+                    Clear filters
+                  </button>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    {/* Sort headers */}
+                    <tr className="border-b border-[#2d3139]">
+                      <th
+                        className="text-left py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm cursor-pointer hover:text-white transition-colors select-none"
+                        onClick={() => handleTxSort("date")}
+                      >
+                        Date <SortIcon field="date" />
+                      </th>
+                      <th
+                        className="text-left py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm cursor-pointer hover:text-white transition-colors select-none"
+                        onClick={() => handleTxSort("method")}
+                      >
+                        Method <SortIcon field="method" />
+                      </th>
+                      <th
+                        className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm cursor-pointer hover:text-white transition-colors select-none"
+                        onClick={() => handleTxSort("amount")}
+                      >
+                        Amount <SortIcon field="amount" />
+                      </th>
+                      <th
+                        className="text-left py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm cursor-pointer hover:text-white transition-colors select-none"
+                        onClick={() => handleTxSort("currency")}
+                      >
+                        Currency <SortIcon field="currency" />
+                      </th>
+                      <th
+                        className="text-left py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm cursor-pointer hover:text-white transition-colors select-none hidden sm:table-cell"
+                        onClick={() => handleTxSort("status")}
+                      >
+                        Status <SortIcon field="status" />
+                      </th>
+                    </tr>
+                    {/* Filter row */}
+                    <tr className="border-b border-[#2d3139] bg-[#0b0e11]/50">
+                      <td className="py-1.5 px-2 sm:px-4">
+                        <div className="relative">
+                          <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600" />
+                          <input
+                            type="text"
+                            value={txFilters.date}
+                            onChange={(e) => handleTxFilterChange("date", e.target.value)}
+                            placeholder="Filter..."
+                            className="w-full bg-[#1e2329] border border-[#2d3139] rounded px-2 py-1 pl-6 text-[10px] sm:text-xs text-white placeholder-gray-600 focus:border-[#f7931a] focus:outline-none transition-colors"
+                          />
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2 sm:px-4">
+                        <div className="relative">
+                          <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600" />
+                          <input
+                            type="text"
+                            value={txFilters.method}
+                            onChange={(e) => handleTxFilterChange("method", e.target.value)}
+                            placeholder="Filter..."
+                            className="w-full bg-[#1e2329] border border-[#2d3139] rounded px-2 py-1 pl-6 text-[10px] sm:text-xs text-white placeholder-gray-600 focus:border-[#f7931a] focus:outline-none transition-colors"
+                          />
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2 sm:px-4">
+                        <div className="relative">
+                          <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600" />
+                          <input
+                            type="text"
+                            value={txFilters.amount}
+                            onChange={(e) => handleTxFilterChange("amount", e.target.value)}
+                            placeholder="Filter..."
+                            className="w-full bg-[#1e2329] border border-[#2d3139] rounded px-2 py-1 pl-6 text-[10px] sm:text-xs text-white placeholder-gray-600 focus:border-[#f7931a] focus:outline-none transition-colors"
+                          />
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2 sm:px-4">
+                        <div className="relative">
+                          <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600" />
+                          <input
+                            type="text"
+                            value={txFilters.currency}
+                            onChange={(e) => handleTxFilterChange("currency", e.target.value)}
+                            placeholder="Filter..."
+                            className="w-full bg-[#1e2329] border border-[#2d3139] rounded px-2 py-1 pl-6 text-[10px] sm:text-xs text-white placeholder-gray-600 focus:border-[#f7931a] focus:outline-none transition-colors"
+                          />
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-2 sm:px-4 hidden sm:table-cell">
+                        <div className="relative">
+                          <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600" />
+                          <input
+                            type="text"
+                            value={txFilters.status}
+                            onChange={(e) => handleTxFilterChange("status", e.target.value)}
+                            placeholder="Filter..."
+                            className="w-full bg-[#1e2329] border border-[#2d3139] rounded px-2 py-1 pl-6 text-[10px] sm:text-xs text-white placeholder-gray-600 focus:border-[#f7931a] focus:outline-none transition-colors"
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedTxns.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-8 text-gray-500 text-sm">
+                          No transactions match your filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      pagedTxns.map((tx, idx) => {
+                        const isPositive = tx.amount > 0;
+                        const isBtc = tx.currency === "BTC";
+                        return (
+                          <tr key={`${tx.date}-${idx}`} className="border-b border-[#2d3139] hover:bg-[#2d3139]/60 transition-colors">
+                            <td className="py-2 sm:py-3 px-2 sm:px-4 text-[10px] sm:text-xs text-gray-300 whitespace-nowrap">
+                              {tx.date.split(" ")[0]}
+                              <span className="text-gray-600 ml-1 hidden sm:inline">{tx.date.split(" ")[1]}</span>
+                            </td>
+                            <td className="py-2 sm:py-3 px-2 sm:px-4 text-[10px] sm:text-xs text-gray-300">
+                              {tx.method}
+                            </td>
+                            <td className={`text-right py-2 sm:py-3 px-2 sm:px-4 text-[10px] sm:text-xs font-mono ${
+                              isBtc ? "text-[#f7931a]" : isPositive ? "text-[#00b96b]" : "text-[#f6465d]"
+                            }`}>
+                              {isPositive ? "+" : ""}{isBtc ? tx.amount.toFixed(8) : tx.amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-2 sm:py-3 px-2 sm:px-4 text-[10px] sm:text-xs">
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-medium ${
+                                tx.currency === "BTC" ? "bg-[#f7931a]/15 text-[#f7931a]" :
+                                tx.currency === "USD" ? "bg-green-900/30 text-green-400" :
+                                tx.currency === "HKD" ? "bg-blue-900/30 text-blue-400" :
+                                tx.currency === "ETH" ? "bg-purple-900/30 text-purple-400" :
+                                "bg-gray-800 text-gray-400"
+                              }`}>
+                                {tx.currency}
+                              </span>
+                            </td>
+                            <td className="py-2 sm:py-3 px-2 sm:px-4 text-[10px] sm:text-xs hidden sm:table-cell">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-medium bg-[#00b96b]/15 text-[#00b96b]">
+                                {tx.status}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {txTotalPages > 1 && (
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#2d3139]">
+                  <p className="text-[10px] sm:text-xs text-gray-500">
+                    Page {txPage + 1} of {txTotalPages}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setTxPage(0)}
+                      disabled={txPage === 0}
+                      className="px-2 py-1 rounded text-[10px] sm:text-xs bg-[#2d3139] text-gray-400 hover:bg-[#3d4149] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      First
+                    </button>
+                    <button
+                      onClick={() => setTxPage((p) => Math.max(0, p - 1))}
+                      disabled={txPage === 0}
+                      className="px-2 py-1 rounded text-[10px] sm:text-xs bg-[#2d3139] text-gray-400 hover:bg-[#3d4149] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Prev
+                    </button>
+                    <button
+                      onClick={() => setTxPage((p) => Math.min(txTotalPages - 1, p + 1))}
+                      disabled={txPage >= txTotalPages - 1}
+                      className="px-2 py-1 rounded text-[10px] sm:text-xs bg-[#2d3139] text-gray-400 hover:bg-[#3d4149] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Next
+                    </button>
+                    <button
+                      onClick={() => setTxPage(txTotalPages - 1)}
+                      disabled={txPage >= txTotalPages - 1}
+                      className="px-2 py-1 rounded text-[10px] sm:text-xs bg-[#2d3139] text-gray-400 hover:bg-[#3d4149] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Last
+                    </button>
+                  </div>
+                </div>
+              )}
             </Card>
           </>
         )}
