@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from "react";
-import { Upload, TrendingUp, TrendingDown, RefreshCw, Calendar, Repeat, DollarSign, ArrowUpDown, ArrowUp, ArrowDown, Search, X } from "lucide-react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { Upload, TrendingUp, TrendingDown, RefreshCw, Calendar, Repeat, DollarSign, ArrowUpDown, ArrowUp, ArrowDown, Search, X, Cloud, CloudOff, Check, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -7,6 +7,8 @@ import {
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Scatter, Area,
 } from "recharts";
 import { useIsMobile } from "@/hooks/useMobile";
+import { supabase, PORTFOLIO_USER_ID } from "@/lib/supabase";
+import { toast } from "sonner";
 
 interface Transaction {
   date: string;
@@ -44,6 +46,7 @@ interface PricePoint {
 type SortField = "date" | "method" | "amount" | "currency" | "status";
 type SortDir = "asc" | "desc";
 type ChartRange = "1M" | "3M" | "6M" | "ALL";
+type CloudSyncStatus = "idle" | "loading" | "syncing" | "synced" | "error";
 
 const HKD_TO_USD = 7.8;
 
@@ -169,24 +172,126 @@ export default function Home() {
   const [txPage, setTxPage] = useState(0);
   const TX_PER_PAGE = 20;
 
-  // Load saved portfolio from localStorage on mount
-  useEffect(() => {
-    const saved = localStorage.getItem("btc_portfolio");
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        setTransactions(data.transactions || []);
-        setTotalBtc(data.totalBtc || 0);
-        setTotalUsdSpent(data.totalUsdSpent || 0);
-        setAvgCostPerBtc(data.avgCostPerBtc || 0);
-        setMonthlyData(data.monthlyData || []);
-        setChartData(data.chartData || []);
-        if (data.buyPoints) setBuyPoints(data.buyPoints);
-      } catch (e) {
-        console.error("Error loading saved portfolio:", e);
+  // Cloud sync state
+  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>("idle");
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+
+  // Apply portfolio data to state (shared by localStorage and Supabase load)
+  const applyPortfolioData = useCallback((data: any) => {
+    setTransactions(data.transactions || []);
+    setTotalBtc(data.totalBtc || 0);
+    setTotalUsdSpent(data.totalUsdSpent || 0);
+    setAvgCostPerBtc(data.avgCostPerBtc || 0);
+    setMonthlyData(data.monthlyData || []);
+    setChartData(data.chartData || []);
+    if (data.buyPoints) setBuyPoints(data.buyPoints);
+  }, []);
+
+  // Load portfolio from Supabase cloud
+  const loadFromCloud = useCallback(async (): Promise<boolean> => {
+    try {
+      setCloudStatus("loading");
+      const { data, error } = await supabase
+        .from("btc_portfolio")
+        .select("transactions, portfolio_state, updated_at")
+        .eq("user_id", PORTFOLIO_USER_ID)
+        .single();
+
+      if (error) {
+        // PGRST116 = no rows found — not an error, just empty
+        if (error.code === "PGRST116") {
+          setCloudStatus("idle");
+          return false;
+        }
+        console.error("Supabase load error:", error);
+        setCloudStatus("error");
+        return false;
       }
+
+      if (data && data.transactions && Array.isArray(data.transactions) && data.transactions.length > 0) {
+        const portfolioState = data.portfolio_state || {};
+        const fullData = {
+          transactions: data.transactions,
+          ...portfolioState,
+        };
+        applyPortfolioData(fullData);
+        // Also cache in localStorage
+        localStorage.setItem("btc_portfolio", JSON.stringify(fullData));
+        setLastSyncTime(new Date(data.updated_at));
+        setCloudStatus("synced");
+        return true;
+      }
+
+      setCloudStatus("idle");
+      return false;
+    } catch (err) {
+      console.error("Cloud load failed:", err);
+      setCloudStatus("error");
+      return false;
+    }
+  }, [applyPortfolioData]);
+
+  // Save portfolio to Supabase cloud
+  const saveToCloud = useCallback(async (txns: Transaction[], state: any) => {
+    try {
+      setCloudStatus("syncing");
+      const { error } = await supabase
+        .from("btc_portfolio")
+        .upsert({
+          user_id: PORTFOLIO_USER_ID,
+          transactions: txns,
+          portfolio_state: state,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: "user_id",
+        });
+
+      if (error) {
+        console.error("Supabase save error:", error);
+        setCloudStatus("error");
+        toast.error("Cloud sync failed", {
+          description: error.message || "Could not save to cloud",
+        });
+        return false;
+      }
+
+      setLastSyncTime(new Date());
+      setCloudStatus("synced");
+      toast.success("Synced to cloud", {
+        description: "Portfolio data saved to Supabase",
+      });
+      return true;
+    } catch (err) {
+      console.error("Cloud save failed:", err);
+      setCloudStatus("error");
+      toast.error("Cloud sync failed", {
+        description: "Network error — data saved locally",
+      });
+      return false;
     }
   }, []);
+
+  // Load portfolio on mount: try Supabase first, fall back to localStorage
+  useEffect(() => {
+    const loadPortfolio = async () => {
+      // Try cloud first
+      const cloudLoaded = await loadFromCloud();
+
+      // Fall back to localStorage if cloud had nothing
+      if (!cloudLoaded) {
+        const saved = localStorage.getItem("btc_portfolio");
+        if (saved) {
+          try {
+            const data = JSON.parse(saved);
+            applyPortfolioData(data);
+          } catch (e) {
+            console.error("Error loading saved portfolio:", e);
+          }
+        }
+      }
+    };
+    loadPortfolio();
+  }, [loadFromCloud, applyPortfolioData]);
 
   // Fetch BTC price from CoinGecko
   const fetchBtcPrice = async () => {
@@ -472,15 +577,23 @@ export default function Home() {
     setMonthlyData(monthlyArray);
     setChartData(cumulativeData);
 
-    localStorage.setItem("btc_portfolio", JSON.stringify({
-      transactions: txns,
+    const portfolioState = {
       totalBtc: btc,
       totalUsdSpent: usdSpent,
       avgCostPerBtc: avgCost,
       monthlyData: monthlyArray,
       chartData: cumulativeData,
       buyPoints: extractedBuyPoints,
+    };
+
+    // Save to localStorage (cache/fallback)
+    localStorage.setItem("btc_portfolio", JSON.stringify({
+      transactions: txns,
+      ...portfolioState,
     }));
+
+    // Save to Supabase cloud
+    saveToCloud(txns, portfolioState);
   };
 
   // Merge price history with buy points, then filter by selected range
@@ -657,6 +770,34 @@ export default function Home() {
                 <span className="sm:hidden">CSV</span>
               </Button>
             )}
+            {/* Cloud Sync Indicator */}
+            <button
+              onClick={() => loadFromCloud()}
+              title={lastSyncTime ? `Last synced: ${lastSyncTime.toLocaleTimeString()}` : "Cloud sync"}
+              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg transition-colors ${
+                cloudStatus === "synced" ? "bg-[#00b96b]/10 text-[#00b96b] hover:bg-[#00b96b]/20" :
+                cloudStatus === "error" ? "bg-[#f6465d]/10 text-[#f6465d] hover:bg-[#f6465d]/20" :
+                cloudStatus === "syncing" || cloudStatus === "loading" ? "bg-[#f7931a]/10 text-[#f7931a]" :
+                "bg-[#1e2329] text-gray-500 hover:bg-[#2d3139] hover:text-gray-300"
+              }`}
+            >
+              {cloudStatus === "syncing" || cloudStatus === "loading" ? (
+                <RefreshCw size={14} className="animate-spin" />
+              ) : cloudStatus === "synced" ? (
+                <Cloud size={14} />
+              ) : cloudStatus === "error" ? (
+                <CloudOff size={14} />
+              ) : (
+                <Cloud size={14} />
+              )}
+              <span className="text-[10px] sm:text-xs hidden sm:inline">
+                {cloudStatus === "syncing" ? "Syncing..." :
+                 cloudStatus === "loading" ? "Loading..." :
+                 cloudStatus === "synced" ? "Synced" :
+                 cloudStatus === "error" ? "Offline" :
+                 "Cloud"}
+              </span>
+            </button>
             <button
               onClick={() => fetchBtcPrice()}
               className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-[#1e2329] hover:bg-[#2d3139] transition-colors"
@@ -679,17 +820,28 @@ export default function Home() {
         {/* Upload Section - only show if no data */}
         {transactions.length === 0 ? (
           <div className="mb-8">
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-[#2d3139] rounded-lg p-6 sm:p-12 text-center cursor-pointer hover:border-[#f7931a] transition-colors"
-            >
-              <Upload size={48} className="mx-auto mb-4 text-[#f7931a]" />
-              <h2 className="text-xl font-semibold mb-2">Upload Transaction Report</h2>
-              <p className="text-gray-400 mb-4">Drag and drop your CSV file or click to browse</p>
-              <Button className="bg-[#f7931a] hover:bg-[#f9a825] text-black font-semibold">
-                Select CSV File
-              </Button>
-            </div>
+            {cloudStatus === "loading" ? (
+              <div className="border-2 border-dashed border-[#2d3139] rounded-lg p-6 sm:p-12 text-center">
+                <RefreshCw size={48} className="mx-auto mb-4 text-[#f7931a] animate-spin" />
+                <h2 className="text-xl font-semibold mb-2">Loading from Cloud...</h2>
+                <p className="text-gray-400">Fetching your portfolio data from Supabase</p>
+              </div>
+            ) : (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-[#2d3139] rounded-lg p-6 sm:p-12 text-center cursor-pointer hover:border-[#f7931a] transition-colors"
+              >
+                <Upload size={48} className="mx-auto mb-4 text-[#f7931a]" />
+                <h2 className="text-xl font-semibold mb-2">Upload Transaction Report</h2>
+                <p className="text-gray-400 mb-2">Drag and drop your CSV file or click to browse</p>
+                {cloudStatus === "error" && (
+                  <p className="text-[#f6465d] text-sm mb-2">Could not load from cloud — upload a CSV to get started</p>
+                )}
+                <Button className="bg-[#f7931a] hover:bg-[#f9a825] text-black font-semibold">
+                  Select CSV File
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
           <>
