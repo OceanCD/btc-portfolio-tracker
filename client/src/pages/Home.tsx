@@ -50,6 +50,40 @@ type CloudSyncStatus = "idle" | "loading" | "syncing" | "synced" | "error";
 
 const HKD_TO_USD = 7.8;
 
+// ============================================================
+// Manual Holdings (exchanges without CSV export)
+// ============================================================
+interface ManualHolding {
+  exchange: string;
+  asset: string;
+  amount: number;
+  avgCostUsd: number | null; // null = unknown cost basis
+}
+
+const MANUAL_HOLDINGS: ManualHolding[] = [
+  // Hashkey Exchange
+  { exchange: "Hashkey", asset: "BTC", amount: 0.117, avgCostUsd: 98601 },
+  { exchange: "Hashkey", asset: "ETH", amount: 1.15, avgCostUsd: 4548 },
+  // OKX Exchange
+  { exchange: "OKX", asset: "BTC", amount: 0.05647, avgCostUsd: 116932 },
+  { exchange: "OKX", asset: "ETH", amount: 2.3698, avgCostUsd: null },
+  { exchange: "OKX", asset: "SOL", amount: 9.26, avgCostUsd: 193 },
+];
+
+// Derived constants from manual holdings
+const MANUAL_BTC = MANUAL_HOLDINGS.filter((h) => h.asset === "BTC");
+const MANUAL_ETH = MANUAL_HOLDINGS.filter((h) => h.asset === "ETH");
+const MANUAL_SOL = MANUAL_HOLDINGS.filter((h) => h.asset === "SOL");
+
+const MANUAL_BTC_TOTAL = MANUAL_BTC.reduce((sum, h) => sum + h.amount, 0);
+const MANUAL_BTC_COST = MANUAL_BTC.reduce((sum, h) => sum + h.amount * (h.avgCostUsd || 0), 0);
+
+const MANUAL_ETH_TOTAL = MANUAL_ETH.reduce((sum, h) => sum + h.amount, 0);
+const MANUAL_ETH_COST = MANUAL_ETH.reduce((sum, h) => sum + h.amount * (h.avgCostUsd || 0), 0);
+
+const MANUAL_SOL_TOTAL = MANUAL_SOL.reduce((sum, h) => sum + h.amount, 0);
+const MANUAL_SOL_COST = MANUAL_SOL.reduce((sum, h) => sum + h.amount * (h.avgCostUsd || 0), 0);
+
 // Format USD with thousand separators and 2 decimal places
 const fmtUsd = (value: number) =>
   "$" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -145,6 +179,8 @@ export default function Home() {
   const [totalUsdSpent, setTotalUsdSpent] = useState(0);
   const [avgCostPerBtc, setAvgCostPerBtc] = useState(0);
   const [currentBtcPrice, setCurrentBtcPrice] = useState(0);
+  const [currentEthPrice, setCurrentEthPrice] = useState(0);
+  const [currentSolPrice, setCurrentSolPrice] = useState(0);
   const [portfolioValue, setPortfolioValue] = useState(0);
   const [pnlUsd, setPnlUsd] = useState(0);
   const [pnlPercent, setPnlPercent] = useState(0);
@@ -293,21 +329,25 @@ export default function Home() {
     loadPortfolio();
   }, [loadFromCloud, applyPortfolioData]);
 
-  // Fetch BTC price from CoinGecko
-  const fetchBtcPrice = async () => {
+  // Fetch BTC, ETH, SOL prices from CoinGecko
+  const fetchPrices = async () => {
     try {
       const response = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd"
       );
       const data = await response.json();
-      const price = data.bitcoin.usd;
-      setCurrentBtcPrice(price);
-      return price;
+      if (data.bitcoin?.usd) setCurrentBtcPrice(data.bitcoin.usd);
+      if (data.ethereum?.usd) setCurrentEthPrice(data.ethereum.usd);
+      if (data.solana?.usd) setCurrentSolPrice(data.solana.usd);
+      return data.bitcoin?.usd || currentBtcPrice;
     } catch (error) {
-      console.error("Error fetching BTC price:", error);
+      console.error("Error fetching prices:", error);
       return currentBtcPrice;
     }
   };
+
+  // Keep backward-compatible alias
+  const fetchBtcPrice = fetchPrices;
 
   // Parse CoinGecko market_chart response into PricePoint[]
   const parsePriceData = (data: any): PricePoint[] | null => {
@@ -377,10 +417,10 @@ export default function Home() {
     setPriceHistoryLoading(false);
   };
 
-  // Auto-refresh BTC price every 30 seconds
+  // Auto-refresh prices every 30 seconds
   useEffect(() => {
-    fetchBtcPrice();
-    const interval = setInterval(fetchBtcPrice, 30000);
+    fetchPrices();
+    const interval = setInterval(fetchPrices, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -625,18 +665,33 @@ export default function Home() {
     return priceTrendData.filter((p) => p.buyPrice !== null).length;
   }, [priceTrendData]);
 
-  // Update portfolio value when price changes
-  useEffect(() => {
-    if (totalBtc === 0) return;
-    const value = totalBtc * currentBtcPrice;
-    setPortfolioValue(value);
+  // Combined BTC totals (OSL CSV + manual exchanges)
+  const combinedBtc = totalBtc + MANUAL_BTC_TOTAL;
+  const combinedBtcCost = totalUsdSpent + MANUAL_BTC_COST;
+  const combinedAvgCostBtc = combinedBtc > 0 ? combinedBtcCost / combinedBtc : 0;
 
-    const pnl = value - totalUsdSpent;
+  // ETH & SOL values
+  const ethValue = MANUAL_ETH_TOTAL * currentEthPrice;
+  const solValue = MANUAL_SOL_TOTAL * currentSolPrice;
+  const totalAltCost = MANUAL_ETH_COST + MANUAL_SOL_COST;
+
+  // Update portfolio value when prices change
+  useEffect(() => {
+    if (combinedBtc === 0 && MANUAL_ETH_TOTAL === 0 && MANUAL_SOL_TOTAL === 0) return;
+
+    const btcVal = combinedBtc * currentBtcPrice;
+    const ethVal = MANUAL_ETH_TOTAL * currentEthPrice;
+    const solVal = MANUAL_SOL_TOTAL * currentSolPrice;
+    const totalVal = btcVal + ethVal + solVal;
+    setPortfolioValue(totalVal);
+
+    const totalCost = combinedBtcCost + totalAltCost;
+    const pnl = totalVal - totalCost;
     setPnlUsd(pnl);
 
-    const pnlPct = totalUsdSpent > 0 ? (pnl / totalUsdSpent) * 100 : 0;
+    const pnlPct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
     setPnlPercent(pnlPct);
-  }, [currentBtcPrice, totalBtc, totalUsdSpent]);
+  }, [currentBtcPrice, currentEthPrice, currentSolPrice, combinedBtc, combinedBtcCost, totalAltCost]);
 
   const isProfitable = pnlUsd >= 0;
 
@@ -817,8 +872,8 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
-        {/* Upload Section - only show if no data */}
-        {transactions.length === 0 ? (
+        {/* Upload Section - only show if no data (but manual holdings always exist) */}
+        {transactions.length === 0 && MANUAL_HOLDINGS.length === 0 ? (
           <div className="mb-8">
             {cloudStatus === "loading" ? (
               <div className="border-2 border-dashed border-[#2d3139] rounded-lg p-6 sm:p-12 text-center">
@@ -944,39 +999,39 @@ export default function Home() {
 
             {/* Dashboard Cards */}
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-8">
-              {/* Total BTC */}
+              {/* Total BTC (all sources) */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
                 <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Total BTC</p>
-                <p className="text-lg sm:text-3xl font-bold text-white mb-1">{totalBtc.toFixed(6)}</p>
-                <p className="text-xs text-gray-500 hidden sm:block">B Bitcoin</p>
+                <p className="text-lg sm:text-3xl font-bold text-[#f7931a] mb-1">{combinedBtc.toFixed(6)}</p>
+                <p className="text-xs text-gray-500 hidden sm:block">3 exchanges combined</p>
               </Card>
 
-              {/* Average Cost */}
+              {/* Average Cost (weighted across all BTC) */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
                 <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Avg Cost/BTC</p>
-                <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(avgCostPerBtc)}</p>
-                <p className="text-xs text-gray-500 hidden sm:block">All amounts in USD</p>
+                <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(combinedAvgCostBtc)}</p>
+                <p className="text-xs text-gray-500 hidden sm:block">Weighted avg all sources</p>
               </Card>
 
-              {/* Current Price */}
+              {/* Current BTC Price */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
                 <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">BTC Price</p>
                 <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(currentBtcPrice)}</p>
                 <p className="text-xs text-gray-500 hidden sm:block">Real-time CoinGecko</p>
               </Card>
 
-              {/* Total Spent */}
+              {/* Total Cost Basis */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
-                <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Total Spent</p>
-                <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(totalUsdSpent)}</p>
-                <p className="text-xs text-gray-500 hidden sm:block">HKD converted at {HKD_TO_USD}</p>
+                <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Total Cost Basis</p>
+                <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(combinedBtcCost + totalAltCost)}</p>
+                <p className="text-xs text-gray-500 hidden sm:block">BTC + ETH + SOL</p>
               </Card>
 
-              {/* Portfolio Value */}
+              {/* Portfolio Value (all assets) */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
                 <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Portfolio Value</p>
                 <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(portfolioValue)}</p>
-                <p className="text-xs text-gray-500 hidden sm:block">Current Market Value</p>
+                <p className="text-xs text-gray-500 hidden sm:block">BTC + ETH + SOL</p>
               </Card>
 
               {/* P&L */}
@@ -995,6 +1050,131 @@ export default function Home() {
                     <p className={`text-xs ${isProfitable ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
                       {isProfitable ? "+" : "-"}{Math.abs(pnlPercent).toFixed(2)}%
                     </p>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Other Crypto Holdings + Exchange Breakdown */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-4 mb-4 sm:mb-8">
+              {/* Other Crypto (ETH & SOL) */}
+              <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+                <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
+                  Other Crypto
+                  <span className="text-[10px] sm:text-xs text-gray-500 font-normal">ETH & SOL</span>
+                </h3>
+                <div className="space-y-3">
+                  {/* ETH */}
+                  <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-[#627eea]/15 flex items-center justify-center text-xs font-bold text-[#627eea]">
+                        ETH
+                      </div>
+                      <div>
+                        <p className="text-xs sm:text-sm font-medium text-white">{MANUAL_ETH_TOTAL.toFixed(4)} ETH</p>
+                        <p className="text-[10px] sm:text-xs text-gray-500">
+                          {MANUAL_ETH_COST > 0 ? `Avg ${fmtUsd(MANUAL_ETH_COST / MANUAL_ETH_TOTAL)}/ETH` : "Cost basis partial"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(ethValue)}</p>
+                      <p className="text-[10px] sm:text-xs text-gray-500">
+                        @ {fmtUsd(currentEthPrice)}
+                      </p>
+                    </div>
+                  </div>
+                  {/* SOL */}
+                  <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-[#9945ff]/15 flex items-center justify-center text-xs font-bold text-[#9945ff]">
+                        SOL
+                      </div>
+                      <div>
+                        <p className="text-xs sm:text-sm font-medium text-white">{MANUAL_SOL_TOTAL.toFixed(2)} SOL</p>
+                        <p className="text-[10px] sm:text-xs text-gray-500">
+                          Avg {fmtUsd(MANUAL_SOL_COST / MANUAL_SOL_TOTAL)}/SOL
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(solValue)}</p>
+                      <p className="text-[10px] sm:text-xs text-gray-500">
+                        @ {fmtUsd(currentSolPrice)}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Total Alt Value */}
+                  <div className="flex items-center justify-between pt-2 border-t border-[#2d3139]">
+                    <p className="text-xs text-gray-400">Total Alt Value</p>
+                    <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(ethValue + solValue)}</p>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Holdings by Exchange */}
+              <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
+                <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4">Holdings by Exchange</h3>
+                <div className="space-y-3">
+                  {/* OSL */}
+                  <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded bg-[#f7931a]/15 flex items-center justify-center text-[9px] font-bold text-[#f7931a]">
+                          OSL
+                        </div>
+                        <span className="text-xs sm:text-sm font-medium text-white">OSL</span>
+                      </div>
+                      <span className="text-[10px] text-gray-500">CSV import</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#f7931a]/10 text-[#f7931a] font-medium">
+                        {totalBtc.toFixed(6)} BTC
+                      </span>
+                    </div>
+                  </div>
+                  {/* Hashkey */}
+                  <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded bg-[#00b96b]/15 flex items-center justify-center text-[9px] font-bold text-[#00b96b]">
+                          HK
+                        </div>
+                        <span className="text-xs sm:text-sm font-medium text-white">Hashkey</span>
+                      </div>
+                      <span className="text-[10px] text-gray-500">Manual</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#f7931a]/10 text-[#f7931a] font-medium">
+                        0.117 BTC
+                      </span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#627eea]/10 text-[#627eea] font-medium">
+                        1.15 ETH
+                      </span>
+                    </div>
+                  </div>
+                  {/* OKX */}
+                  <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[9px] font-bold text-white">
+                          OKX
+                        </div>
+                        <span className="text-xs sm:text-sm font-medium text-white">OKX</span>
+                      </div>
+                      <span className="text-[10px] text-gray-500">Manual</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#f7931a]/10 text-[#f7931a] font-medium">
+                        0.05647 BTC
+                      </span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#627eea]/10 text-[#627eea] font-medium">
+                        2.3698 ETH
+                      </span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#9945ff]/10 text-[#9945ff] font-medium">
+                        9.26 SOL
+                      </span>
+                    </div>
                   </div>
                 </div>
               </Card>
@@ -1140,7 +1320,7 @@ export default function Home() {
                   <BarChart data={[
                     {
                       name: "Portfolio",
-                      "Cost Basis": totalUsdSpent,
+                      "Cost Basis": combinedBtcCost + totalAltCost,
                       "Current Value": portfolioValue,
                     },
                   ]}>
