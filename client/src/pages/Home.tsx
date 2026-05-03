@@ -181,6 +181,11 @@ export default function Home() {
   const [currentBtcPrice, setCurrentBtcPrice] = useState(0);
   const [currentEthPrice, setCurrentEthPrice] = useState(0);
   const [currentSolPrice, setCurrentSolPrice] = useState(0);
+  // CSV-extracted ETH/SOL holdings
+  const [csvEth, setCsvEth] = useState(0);
+  const [csvEthCost, setCsvEthCost] = useState(0);
+  const [csvSol, setCsvSol] = useState(0);
+  const [csvSolCost, setCsvSolCost] = useState(0);
   const [portfolioValue, setPortfolioValue] = useState(0);
   const [pnlUsd, setPnlUsd] = useState(0);
   const [pnlPercent, setPnlPercent] = useState(0);
@@ -221,6 +226,11 @@ export default function Home() {
     setMonthlyData(data.monthlyData || []);
     setChartData(data.chartData || []);
     if (data.buyPoints) setBuyPoints(data.buyPoints);
+    // Restore CSV ETH/SOL
+    setCsvEth(data.csvEth || 0);
+    setCsvEthCost(data.csvEthCost || 0);
+    setCsvSol(data.csvSol || 0);
+    setCsvSolCost(data.csvSolCost || 0);
   }, []);
 
   // Load portfolio from Supabase cloud
@@ -497,25 +507,42 @@ export default function Home() {
   const calculateMetrics = (txns: Transaction[]) => {
     let btc = 0;
     let usdSpent = 0;
+    let ethTotal = 0;
+    let ethCostTotal = 0;
+    let solTotal = 0;
+    let solCostTotal = 0;
     const monthlyMap = new Map<string, { btc: number; cost: number }>();
     const cumulativeData: any[] = [];
 
     // Sort by date
     const sorted = [...txns].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    // Build a set of timestamps that have BTC purchases
-    const btcBuyTimestamps = new Set<string>();
+    // Build a map of timestamps that have crypto purchases (BTC, ETH, SOL)
+    const cryptoBuyTimestamps = new Map<string, Set<string>>();
     sorted.forEach((tx) => {
-      if (tx.currency === "BTC" && tx.amount > 0) {
-        btcBuyTimestamps.add(tx.date);
+      if ((tx.currency === "BTC" || tx.currency === "ETH" || tx.currency === "SOL") && tx.amount > 0) {
+        if (tx.method === "Rewards") return;
+        if (!cryptoBuyTimestamps.has(tx.date)) {
+          cryptoBuyTimestamps.set(tx.date, new Set());
+        }
+        cryptoBuyTimestamps.get(tx.date)!.add(tx.currency);
       }
     });
 
-    // Build buy points for the price trend chart
+    // Build buy points for the price trend chart (BTC only)
     const buyByTimestamp = new Map<string, { btc: number; cost: number }>();
 
     let cumulativeBtc = 0;
     let cumulativeCost = 0;
+
+    // Build a map of USD costs per timestamp
+    const usdCostByTimestamp = new Map<string, number>();
+    sorted.forEach((tx) => {
+      if ((tx.currency === "USD" || tx.currency === "HKD") && tx.amount < 0) {
+        const usdAmount = tx.currency === "HKD" ? Math.abs(tx.amount) / HKD_TO_USD : Math.abs(tx.amount);
+        usdCostByTimestamp.set(tx.date, (usdCostByTimestamp.get(tx.date) || 0) + usdAmount);
+      }
+    });
 
     sorted.forEach((tx) => {
       const date = new Date(tx.date);
@@ -538,29 +565,45 @@ export default function Home() {
         }
         buyByTimestamp.get(tx.date)!.btc += tx.amount;
 
+        // Allocate cost from paired USD debit at same timestamp
+        const costAtTs = usdCostByTimestamp.get(tx.date) || 0;
+        const currenciesAtTs = cryptoBuyTimestamps.get(tx.date);
+        let btcCostShare = costAtTs;
+        if (currenciesAtTs && currenciesAtTs.size > 1) {
+          btcCostShare = costAtTs / currenciesAtTs.size;
+        }
+
+        usdSpent += btcCostShare;
+        cumulativeCost += btcCostShare;
+        buyByTimestamp.get(tx.date)!.cost += btcCostShare;
+        monthlyMap.get(monthKey)!.cost += btcCostShare;
+
         cumulativeData.push({
           date: tx.date.split(" ")[0],
           cumulativeBtc: cumulativeBtc,
           costBasis: cumulativeCost,
           avgCost: cumulativeBtc > 0 ? cumulativeCost / cumulativeBtc : 0,
         });
-      } else if ((tx.currency === "USD" || tx.currency === "HKD") && tx.amount < 0) {
-        if (btcBuyTimestamps.has(tx.date)) {
-          const usdAmount = tx.currency === "HKD" ? Math.abs(tx.amount) / HKD_TO_USD : Math.abs(tx.amount);
-          usdSpent += usdAmount;
-          cumulativeCost += usdAmount;
-
-          if (!monthlyMap.has(monthKey)) {
-            monthlyMap.set(monthKey, { btc: 0, cost: 0 });
-          }
-          const monthly = monthlyMap.get(monthKey)!;
-          monthly.cost += usdAmount;
-
-          if (!buyByTimestamp.has(tx.date)) {
-            buyByTimestamp.set(tx.date, { btc: 0, cost: 0 });
-          }
-          buyByTimestamp.get(tx.date)!.cost += usdAmount;
+      } else if (tx.currency === "ETH" && tx.amount > 0) {
+        if (tx.method === "Rewards") return;
+        ethTotal += tx.amount;
+        const costAtTs = usdCostByTimestamp.get(tx.date) || 0;
+        const currenciesAtTs = cryptoBuyTimestamps.get(tx.date);
+        let ethCostShare = costAtTs;
+        if (currenciesAtTs && currenciesAtTs.size > 1) {
+          ethCostShare = costAtTs / currenciesAtTs.size;
         }
+        ethCostTotal += ethCostShare;
+      } else if (tx.currency === "SOL" && tx.amount > 0) {
+        if (tx.method === "Rewards") return;
+        solTotal += tx.amount;
+        const costAtTs = usdCostByTimestamp.get(tx.date) || 0;
+        const currenciesAtTs = cryptoBuyTimestamps.get(tx.date);
+        let solCostShare = costAtTs;
+        if (currenciesAtTs && currenciesAtTs.size > 1) {
+          solCostShare = costAtTs / currenciesAtTs.size;
+        }
+        solCostTotal += solCostShare;
       }
     });
 
@@ -593,6 +636,10 @@ export default function Home() {
 
     setTotalBtc(btc);
     setTotalUsdSpent(usdSpent);
+    setCsvEth(ethTotal);
+    setCsvEthCost(ethCostTotal);
+    setCsvSol(solTotal);
+    setCsvSolCost(solCostTotal);
 
     const avgCost = btc > 0 ? usdSpent / btc : 0;
     setAvgCostPerBtc(avgCost);
@@ -624,6 +671,10 @@ export default function Home() {
       monthlyData: monthlyArray,
       chartData: cumulativeData,
       buyPoints: extractedBuyPoints,
+      csvEth: ethTotal,
+      csvEthCost: ethCostTotal,
+      csvSol: solTotal,
+      csvSolCost: solCostTotal,
     };
 
     // Save to localStorage (cache/fallback)
@@ -665,23 +716,28 @@ export default function Home() {
     return priceTrendData.filter((p) => p.buyPrice !== null).length;
   }, [priceTrendData]);
 
-  // Combined BTC totals (OSL CSV + manual exchanges)
+  // Combined totals (CSV + manual holdings)
   const combinedBtc = totalBtc + MANUAL_BTC_TOTAL;
   const combinedBtcCost = totalUsdSpent + MANUAL_BTC_COST;
   const combinedAvgCostBtc = combinedBtc > 0 ? combinedBtcCost / combinedBtc : 0;
 
-  // ETH & SOL values
-  const ethValue = MANUAL_ETH_TOTAL * currentEthPrice;
-  const solValue = MANUAL_SOL_TOTAL * currentSolPrice;
-  const totalAltCost = MANUAL_ETH_COST + MANUAL_SOL_COST;
+  const combinedEth = csvEth + MANUAL_ETH_TOTAL;
+  const combinedEthCost = csvEthCost + MANUAL_ETH_COST;
+  const combinedSol = csvSol + MANUAL_SOL_TOTAL;
+  const combinedSolCost = csvSolCost + MANUAL_SOL_COST;
+
+  // ETH & SOL market values
+  const ethValue = combinedEth * currentEthPrice;
+  const solValue = combinedSol * currentSolPrice;
+  const totalAltCost = combinedEthCost + combinedSolCost;
 
   // Update portfolio value when prices change
   useEffect(() => {
-    if (combinedBtc === 0 && MANUAL_ETH_TOTAL === 0 && MANUAL_SOL_TOTAL === 0) return;
+    if (combinedBtc === 0 && combinedEth === 0 && combinedSol === 0) return;
 
     const btcVal = combinedBtc * currentBtcPrice;
-    const ethVal = MANUAL_ETH_TOTAL * currentEthPrice;
-    const solVal = MANUAL_SOL_TOTAL * currentSolPrice;
+    const ethVal = combinedEth * currentEthPrice;
+    const solVal = combinedSol * currentSolPrice;
     const totalVal = btcVal + ethVal + solVal;
     setPortfolioValue(totalVal);
 
@@ -691,7 +747,7 @@ export default function Home() {
 
     const pnlPct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
     setPnlPercent(pnlPct);
-  }, [currentBtcPrice, currentEthPrice, currentSolPrice, combinedBtc, combinedBtcCost, totalAltCost]);
+  }, [currentBtcPrice, currentEthPrice, currentSolPrice, combinedBtc, combinedBtcCost, combinedEth, combinedEthCost, combinedSol, combinedSolCost, totalAltCost]);
 
   const isProfitable = pnlUsd >= 0;
 
@@ -1003,7 +1059,7 @@ export default function Home() {
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
                 <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Total BTC</p>
                 <p className="text-lg sm:text-3xl font-bold text-[#f7931a] mb-1">{combinedBtc.toFixed(6)}</p>
-                <p className="text-xs text-gray-500 hidden sm:block">3 exchanges combined</p>
+                <p className="text-xs text-gray-500 hidden sm:block">OSL + Hashkey + OKX</p>
               </Card>
 
               {/* Average Cost (weighted across all BTC) */}
@@ -1024,14 +1080,14 @@ export default function Home() {
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
                 <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Total Cost Basis</p>
                 <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(combinedBtcCost + totalAltCost)}</p>
-                <p className="text-xs text-gray-500 hidden sm:block">BTC + ETH + SOL</p>
+                <p className="text-xs text-gray-500 hidden sm:block">All assets, all exchanges</p>
               </Card>
 
               {/* Portfolio Value (all assets) */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
                 <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">Portfolio Value</p>
                 <p className="text-lg sm:text-3xl font-bold text-white mb-1">{fmtUsd(portfolioValue)}</p>
-                <p className="text-xs text-gray-500 hidden sm:block">BTC + ETH + SOL</p>
+                <p className="text-xs text-gray-500 hidden sm:block">All assets combined</p>
               </Card>
 
               {/* P&L */}
@@ -1071,9 +1127,9 @@ export default function Home() {
                         ETH
                       </div>
                       <div>
-                        <p className="text-xs sm:text-sm font-medium text-white">{MANUAL_ETH_TOTAL.toFixed(4)} ETH</p>
+                        <p className="text-xs sm:text-sm font-medium text-white">{combinedEth.toFixed(4)} ETH</p>
                         <p className="text-[10px] sm:text-xs text-gray-500">
-                          {MANUAL_ETH_COST > 0 ? `Avg ${fmtUsd(MANUAL_ETH_COST / MANUAL_ETH_TOTAL)}/ETH` : "Cost basis partial"}
+                          {combinedEthCost > 0 ? `Avg ${fmtUsd(combinedEthCost / combinedEth)}/ETH` : "Cost basis partial"}
                         </p>
                       </div>
                     </div>
@@ -1091,9 +1147,9 @@ export default function Home() {
                         SOL
                       </div>
                       <div>
-                        <p className="text-xs sm:text-sm font-medium text-white">{MANUAL_SOL_TOTAL.toFixed(2)} SOL</p>
+                        <p className="text-xs sm:text-sm font-medium text-white">{combinedSol.toFixed(4)} SOL</p>
                         <p className="text-[10px] sm:text-xs text-gray-500">
-                          Avg {fmtUsd(MANUAL_SOL_COST / MANUAL_SOL_TOTAL)}/SOL
+                          {combinedSolCost > 0 ? `Avg ${fmtUsd(combinedSolCost / combinedSol)}/SOL` : "Cost basis unknown"}
                         </p>
                       </div>
                     </div>
@@ -1131,6 +1187,16 @@ export default function Home() {
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#f7931a]/10 text-[#f7931a] font-medium">
                         {totalBtc.toFixed(6)} BTC
                       </span>
+                      {csvEth > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#627eea]/10 text-[#627eea] font-medium">
+                          {csvEth.toFixed(4)} ETH
+                        </span>
+                      )}
+                      {csvSol > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#9945ff]/10 text-[#9945ff] font-medium">
+                          {csvSol.toFixed(4)} SOL
+                        </span>
+                      )}
                     </div>
                   </div>
                   {/* Hashkey */}
