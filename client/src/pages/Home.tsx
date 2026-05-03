@@ -66,7 +66,7 @@ const MANUAL_HOLDINGS: ManualHolding[] = [
   { exchange: "Hashkey", asset: "ETH", amount: 1.15, avgCostUsd: 4548 },
   // OKX Exchange
   { exchange: "OKX", asset: "BTC", amount: 0.05647, avgCostUsd: 116932 },
-  { exchange: "OKX", asset: "ETH", amount: 2.3698, avgCostUsd: null },
+  { exchange: "OKX", asset: "ETH", amount: 2.3698, avgCostUsd: 4000 },
   { exchange: "OKX", asset: "SOL", amount: 9.26, avgCostUsd: 193 },
 ];
 
@@ -1379,30 +1379,7 @@ export default function Home() {
                 </ResponsiveContainer>
               </Card>
 
-              {/* Cost Basis vs Current Value */}
-              <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
-                <h3 className="text-sm sm:text-lg font-semibold mb-2 sm:mb-4">Cost Basis vs Current Value</h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={[
-                    {
-                      name: "Portfolio",
-                      "Cost Basis": combinedBtcCost + totalAltCost,
-                      "Current Value": portfolioValue,
-                    },
-                  ]}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" />
-                    <XAxis dataKey="name" stroke="#888" />
-                    <YAxis stroke="#888" tickFormatter={(v: number) => fmtUsdInt(v)} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139" }}
-                      formatter={(value: any) => fmtUsd(value)}
-                    />
-                    <Legend />
-                    <Bar dataKey="Cost Basis" fill="#888" />
-                    <Bar dataKey="Current Value" fill={isProfitable ? "#00b96b" : "#f6465d"} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </Card>
+
             </div>
 
             {/* Monthly Breakdown Table */}
