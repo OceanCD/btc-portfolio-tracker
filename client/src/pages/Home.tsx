@@ -736,42 +736,7 @@ export default function Home() {
       }));
   }, [chartData, priceHistory]);
 
-  // Portfolio allocation data for donut chart
-  const allocationData = useMemo(() => {
-    if (portfolioValue === 0) return [];
-
-    const btcVal = combinedBtc * currentBtcPrice;
-    const ethVal = combinedEth * currentEthPrice;
-    const solVal = combinedSol * currentSolPrice;
-
-    const slices: { name: string; value: number; color: string }[] = [];
-
-    // BTC slices by source
-    if (totalBtc * currentBtcPrice > 0) {
-      slices.push({ name: "BTC (CSV)", value: totalBtc * currentBtcPrice, color: "#f7931a" });
-    }
-    if (MANUAL_BTC_TOTAL * currentBtcPrice > 0) {
-      // Further split by exchange
-      const hkBtcVal = (MANUAL_BTC.find(h => h.exchange === "Hashkey")?.amount || 0) * currentBtcPrice;
-      const okxBtcVal = (MANUAL_BTC.find(h => h.exchange === "OKX")?.amount || 0) * currentBtcPrice;
-      if (hkBtcVal > 0) slices.push({ name: "BTC (Hashkey)", value: hkBtcVal, color: "#c67d2e" });
-      if (okxBtcVal > 0) slices.push({ name: "BTC (OKX)", value: okxBtcVal, color: "#a0631f" });
-    }
-
-    // ETH
-    if (combinedEth * currentEthPrice > 0) {
-      slices.push({ name: "ETH", value: ethVal, color: "#627eea" });
-    }
-
-    // SOL
-    if (combinedSol * currentSolPrice > 0) {
-      slices.push({ name: "SOL", value: solVal, color: "#9945ff" });
-    }
-
-    return slices;
-  }, [portfolioValue, combinedBtc, totalBtc, currentBtcPrice, combinedEth, currentEthPrice, combinedSol, currentSolPrice]);
-
-  // Combined totals (CSV + manual holdings)
+  // Combined totals (CSV + manual holdings) — must be before any useMemo that references them
   const combinedBtc = totalBtc + MANUAL_BTC_TOTAL;
   const combinedBtcCost = totalUsdSpent + MANUAL_BTC_COST;
   const combinedAvgCostBtc = combinedBtc > 0 ? combinedBtcCost / combinedBtc : 0;
@@ -785,6 +750,38 @@ export default function Home() {
   const ethValue = combinedEth * currentEthPrice;
   const solValue = combinedSol * currentSolPrice;
   const totalAltCost = combinedEthCost + combinedSolCost;
+
+  // Portfolio allocation data for donut chart
+  const allocationData = useMemo(() => {
+    if (portfolioValue === 0) return [];
+
+    const slices: { name: string; value: number; color: string }[] = [];
+
+    // BTC CSV holdings
+    if (totalBtc * currentBtcPrice > 0) {
+      slices.push({ name: "BTC (CSV)", value: totalBtc * currentBtcPrice, color: "#f7931a" });
+    }
+
+    // BTC manual holdings — split by exchange
+    if (MANUAL_BTC_TOTAL * currentBtcPrice > 0) {
+      const hkBtcVal = (MANUAL_BTC.find(h => h.exchange === "Hashkey")?.amount || 0) * currentBtcPrice;
+      const okxBtcVal = (MANUAL_BTC.find(h => h.exchange === "OKX")?.amount || 0) * currentBtcPrice;
+      if (hkBtcVal > 0) slices.push({ name: "BTC (Hashkey)", value: hkBtcVal, color: "#c67d2e" });
+      if (okxBtcVal > 0) slices.push({ name: "BTC (OKX)", value: okxBtcVal, color: "#a0631f" });
+    }
+
+    // ETH
+    if (combinedEth * currentEthPrice > 0) {
+      slices.push({ name: "ETH", value: combinedEth * currentEthPrice, color: "#627eea" });
+    }
+
+    // SOL
+    if (combinedSol * currentSolPrice > 0) {
+      slices.push({ name: "SOL", value: combinedSol * currentSolPrice, color: "#9945ff" });
+    }
+
+    return slices;
+  }, [portfolioValue, combinedBtc, totalBtc, currentBtcPrice, combinedEth, currentEthPrice, combinedSol, currentSolPrice]);
 
   // Update portfolio value when prices change
   useEffect(() => {
