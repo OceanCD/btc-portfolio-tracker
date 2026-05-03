@@ -1111,136 +1111,215 @@ export default function Home() {
               </Card>
             </div>
 
-            {/* Other Crypto Holdings + Exchange Breakdown */}
+            {/* P&L Breakdown by Currency */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-4 mb-4 sm:mb-8">
-              {/* Other Crypto (ETH & SOL) */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
-                <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
-                  Other Crypto
-                  <span className="text-[10px] sm:text-xs text-gray-500 font-normal">ETH & SOL</span>
-                </h3>
+                <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4">P&L by Currency</h3>
                 <div className="space-y-3">
-                  {/* ETH */}
-                  <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-[#627eea]/15 flex items-center justify-center text-xs font-bold text-[#627eea]">
-                        ETH
+                  {/* BTC P&L */}
+                  {(() => {
+                    const btcVal = combinedBtc * currentBtcPrice;
+                    const btcPnl = btcVal - combinedBtcCost;
+                    const btcPnlPct = combinedBtcCost > 0 ? (btcPnl / combinedBtcCost) * 100 : 0;
+                    const btcUp = btcPnl >= 0;
+                    return (
+                      <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-[#f7931a]/15 flex items-center justify-center text-[10px] font-bold text-[#f7931a]">BTC</div>
+                            <div>
+                              <p className="text-xs sm:text-sm font-medium text-white">{combinedBtc.toFixed(6)} BTC</p>
+                              <p className="text-[10px] text-gray-500">Cost: {fmtUsd(combinedBtcCost)}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(btcVal)}</p>
+                            <p className={`text-[10px] sm:text-xs font-medium ${btcUp ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
+                              {btcUp ? "+" : "-"}{fmtUsd(Math.abs(btcPnl))} ({btcUp ? "+" : "-"}{Math.abs(btcPnlPct).toFixed(2)}%)
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs sm:text-sm font-medium text-white">{combinedEth.toFixed(4)} ETH</p>
-                        <p className="text-[10px] sm:text-xs text-gray-500">
-                          {combinedEthCost > 0 ? `Avg ${fmtUsd(combinedEthCost / combinedEth)}/ETH` : "Cost basis partial"}
-                        </p>
+                    );
+                  })()}
+                  {/* ETH P&L */}
+                  {(() => {
+                    const ethPnl = ethValue - combinedEthCost;
+                    const ethPnlPct = combinedEthCost > 0 ? (ethPnl / combinedEthCost) * 100 : 0;
+                    const ethUp = ethPnl >= 0;
+                    return (
+                      <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-[#627eea]/15 flex items-center justify-center text-[10px] font-bold text-[#627eea]">ETH</div>
+                            <div>
+                              <p className="text-xs sm:text-sm font-medium text-white">{combinedEth.toFixed(4)} ETH</p>
+                              <p className="text-[10px] text-gray-500">Cost: {fmtUsd(combinedEthCost)}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(ethValue)}</p>
+                            <p className={`text-[10px] sm:text-xs font-medium ${ethUp ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
+                              {ethUp ? "+" : "-"}{fmtUsd(Math.abs(ethPnl))} ({ethUp ? "+" : "-"}{Math.abs(ethPnlPct).toFixed(2)}%)
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(ethValue)}</p>
-                      <p className="text-[10px] sm:text-xs text-gray-500">
-                        @ {fmtUsd(currentEthPrice)}
-                      </p>
-                    </div>
-                  </div>
-                  {/* SOL */}
-                  <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-[#9945ff]/15 flex items-center justify-center text-xs font-bold text-[#9945ff]">
-                        SOL
+                    );
+                  })()}
+                  {/* SOL P&L */}
+                  {(() => {
+                    const solPnl = solValue - combinedSolCost;
+                    const solPnlPct = combinedSolCost > 0 ? (solPnl / combinedSolCost) * 100 : 0;
+                    const solUp = solPnl >= 0;
+                    return (
+                      <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-[#9945ff]/15 flex items-center justify-center text-[10px] font-bold text-[#9945ff]">SOL</div>
+                            <div>
+                              <p className="text-xs sm:text-sm font-medium text-white">{combinedSol.toFixed(4)} SOL</p>
+                              <p className="text-[10px] text-gray-500">Cost: {fmtUsd(combinedSolCost)}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(solValue)}</p>
+                            <p className={`text-[10px] sm:text-xs font-medium ${solUp ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
+                              {solUp ? "+" : "-"}{fmtUsd(Math.abs(solPnl))} ({solUp ? "+" : "-"}{Math.abs(solPnlPct).toFixed(2)}%)
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs sm:text-sm font-medium text-white">{combinedSol.toFixed(4)} SOL</p>
-                        <p className="text-[10px] sm:text-xs text-gray-500">
-                          {combinedSolCost > 0 ? `Avg ${fmtUsd(combinedSolCost / combinedSol)}/SOL` : "Cost basis unknown"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(solValue)}</p>
-                      <p className="text-[10px] sm:text-xs text-gray-500">
-                        @ {fmtUsd(currentSolPrice)}
-                      </p>
-                    </div>
-                  </div>
-                  {/* Total Alt Value */}
+                    );
+                  })()}
+                  {/* Total */}
                   <div className="flex items-center justify-between pt-2 border-t border-[#2d3139]">
-                    <p className="text-xs text-gray-400">Total Alt Value</p>
-                    <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(ethValue + solValue)}</p>
+                    <p className="text-xs text-gray-400">Total P&L</p>
+                    <p className={`text-xs sm:text-sm font-semibold ${isProfitable ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
+                      {isProfitable ? "+" : "-"}{fmtUsd(Math.abs(pnlUsd))} ({isProfitable ? "+" : "-"}{Math.abs(pnlPercent).toFixed(2)}%)
+                    </p>
                   </div>
                 </div>
               </Card>
 
-              {/* Holdings by Exchange */}
+              {/* P&L by Exchange */}
               <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6">
-                <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4">Holdings by Exchange</h3>
+                <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4">P&L by Exchange</h3>
                 <div className="space-y-3">
                   {/* OSL */}
-                  <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded bg-[#f7931a]/15 flex items-center justify-center text-[9px] font-bold text-[#f7931a]">
-                          OSL
+                  {(() => {
+                    const oslBtcVal = totalBtc * currentBtcPrice;
+                    const oslEthVal = csvEth * currentEthPrice;
+                    const oslSolVal = csvSol * currentSolPrice;
+                    const oslVal = oslBtcVal + oslEthVal + oslSolVal;
+                    const oslCost = totalUsdSpent + csvEthCost + csvSolCost;
+                    const oslPnl = oslVal - oslCost;
+                    const oslPnlPct = oslCost > 0 ? (oslPnl / oslCost) * 100 : 0;
+                    const oslUp = oslPnl >= 0;
+                    return (
+                      <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded bg-[#f7931a]/15 flex items-center justify-center text-[9px] font-bold text-[#f7931a]">OSL</div>
+                            <div>
+                              <p className="text-xs sm:text-sm font-medium text-white">OSL</p>
+                              <p className="text-[10px] text-gray-500">Cost: {fmtUsd(oslCost)}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(oslVal)}</p>
+                            <p className={`text-[10px] sm:text-xs font-medium ${oslUp ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
+                              {oslUp ? "+" : "-"}{fmtUsd(Math.abs(oslPnl))} ({oslUp ? "+" : "-"}{Math.abs(oslPnlPct).toFixed(2)}%)
+                            </p>
+                          </div>
                         </div>
-                        <span className="text-xs sm:text-sm font-medium text-white">OSL</span>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#f7931a]/10 text-[#f7931a]">{totalBtc.toFixed(6)} BTC</span>
+                          {csvEth > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#627eea]/10 text-[#627eea]">{csvEth.toFixed(4)} ETH</span>}
+                          {csvSol > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#9945ff]/10 text-[#9945ff]">{csvSol.toFixed(4)} SOL</span>}
+                        </div>
                       </div>
-                      <span className="text-[10px] text-gray-500">CSV import</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#f7931a]/10 text-[#f7931a] font-medium">
-                        {totalBtc.toFixed(6)} BTC
-                      </span>
-                      {csvEth > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#627eea]/10 text-[#627eea] font-medium">
-                          {csvEth.toFixed(4)} ETH
-                        </span>
-                      )}
-                      {csvSol > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#9945ff]/10 text-[#9945ff] font-medium">
-                          {csvSol.toFixed(4)} SOL
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                    );
+                  })()}
                   {/* Hashkey */}
-                  <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded bg-[#00b96b]/15 flex items-center justify-center text-[9px] font-bold text-[#00b96b]">
-                          HK
+                  {(() => {
+                    const hkBtc = MANUAL_HOLDINGS.find(h => h.exchange === "Hashkey" && h.asset === "BTC");
+                    const hkEth = MANUAL_HOLDINGS.find(h => h.exchange === "Hashkey" && h.asset === "ETH");
+                    const hkBtcVal = (hkBtc?.amount || 0) * currentBtcPrice;
+                    const hkEthVal = (hkEth?.amount || 0) * currentEthPrice;
+                    const hkVal = hkBtcVal + hkEthVal;
+                    const hkCost = (hkBtc?.amount || 0) * (hkBtc?.avgCostUsd || 0) + (hkEth?.amount || 0) * (hkEth?.avgCostUsd || 0);
+                    const hkPnl = hkVal - hkCost;
+                    const hkPnlPct = hkCost > 0 ? (hkPnl / hkCost) * 100 : 0;
+                    const hkUp = hkPnl >= 0;
+                    return (
+                      <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded bg-[#00b96b]/15 flex items-center justify-center text-[9px] font-bold text-[#00b96b]">HK</div>
+                            <div>
+                              <p className="text-xs sm:text-sm font-medium text-white">Hashkey</p>
+                              <p className="text-[10px] text-gray-500">Cost: {fmtUsd(hkCost)}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(hkVal)}</p>
+                            <p className={`text-[10px] sm:text-xs font-medium ${hkUp ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
+                              {hkUp ? "+" : "-"}{fmtUsd(Math.abs(hkPnl))} ({hkUp ? "+" : "-"}{Math.abs(hkPnlPct).toFixed(2)}%)
+                            </p>
+                          </div>
                         </div>
-                        <span className="text-xs sm:text-sm font-medium text-white">Hashkey</span>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#f7931a]/10 text-[#f7931a]">{hkBtc?.amount || 0} BTC</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#627eea]/10 text-[#627eea]">{hkEth?.amount || 0} ETH</span>
+                        </div>
                       </div>
-                      <span className="text-[10px] text-gray-500">Manual</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#f7931a]/10 text-[#f7931a] font-medium">
-                        0.117 BTC
-                      </span>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#627eea]/10 text-[#627eea] font-medium">
-                        1.15 ETH
-                      </span>
-                    </div>
-                  </div>
+                    );
+                  })()}
                   {/* OKX */}
-                  <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[9px] font-bold text-white">
-                          OKX
+                  {(() => {
+                    const okxBtc = MANUAL_HOLDINGS.find(h => h.exchange === "OKX" && h.asset === "BTC");
+                    const okxEth = MANUAL_HOLDINGS.find(h => h.exchange === "OKX" && h.asset === "ETH");
+                    const okxSol = MANUAL_HOLDINGS.find(h => h.exchange === "OKX" && h.asset === "SOL");
+                    const okxBtcVal = (okxBtc?.amount || 0) * currentBtcPrice;
+                    const okxEthVal = (okxEth?.amount || 0) * currentEthPrice;
+                    const okxSolVal = (okxSol?.amount || 0) * currentSolPrice;
+                    const okxVal = okxBtcVal + okxEthVal + okxSolVal;
+                    const okxCost = (okxBtc?.amount || 0) * (okxBtc?.avgCostUsd || 0) + (okxEth?.amount || 0) * (okxEth?.avgCostUsd || 0) + (okxSol?.amount || 0) * (okxSol?.avgCostUsd || 0);
+                    const okxPnl = okxVal - okxCost;
+                    const okxPnlPct = okxCost > 0 ? (okxPnl / okxCost) * 100 : 0;
+                    const okxUp = okxPnl >= 0;
+                    return (
+                      <div className="p-2.5 sm:p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded bg-white/10 flex items-center justify-center text-[9px] font-bold text-white">OKX</div>
+                            <div>
+                              <p className="text-xs sm:text-sm font-medium text-white">OKX</p>
+                              <p className="text-[10px] text-gray-500">Cost: {fmtUsd(okxCost)}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs sm:text-sm font-semibold text-white">{fmtUsd(okxVal)}</p>
+                            <p className={`text-[10px] sm:text-xs font-medium ${okxUp ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
+                              {okxUp ? "+" : "-"}{fmtUsd(Math.abs(okxPnl))} ({okxUp ? "+" : "-"}{Math.abs(okxPnlPct).toFixed(2)}%)
+                            </p>
+                          </div>
                         </div>
-                        <span className="text-xs sm:text-sm font-medium text-white">OKX</span>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#f7931a]/10 text-[#f7931a]">{okxBtc?.amount || 0} BTC</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#627eea]/10 text-[#627eea]">{okxEth?.amount || 0} ETH</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#9945ff]/10 text-[#9945ff]">{okxSol?.amount || 0} SOL</span>
+                        </div>
                       </div>
-                      <span className="text-[10px] text-gray-500">Manual</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#f7931a]/10 text-[#f7931a] font-medium">
-                        0.05647 BTC
-                      </span>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#627eea]/10 text-[#627eea] font-medium">
-                        2.3698 ETH
-                      </span>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs bg-[#9945ff]/10 text-[#9945ff] font-medium">
-                        9.26 SOL
-                      </span>
-                    </div>
+                    );
+                  })()}
+                  {/* Total */}
+                  <div className="flex items-center justify-between pt-2 border-t border-[#2d3139]">
+                    <p className="text-xs text-gray-400">Total P&L</p>
+                    <p className={`text-xs sm:text-sm font-semibold ${isProfitable ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
+                      {isProfitable ? "+" : "-"}{fmtUsd(Math.abs(pnlUsd))} ({isProfitable ? "+" : "-"}{Math.abs(pnlPercent).toFixed(2)}%)
+                    </p>
                   </div>
                 </div>
               </Card>
