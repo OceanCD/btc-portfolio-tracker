@@ -717,24 +717,28 @@ export default function Home() {
     return priceTrendData.filter((p) => p.buyPrice !== null).length;
   }, [priceTrendData]);
 
-  // Cumulative Investment vs Portfolio Value chart data
-  const investmentVsValueData = useMemo(() => {
-    if (chartData.length === 0 || priceHistory.length === 0) return [];
+  // DCA Performance: what each buy is worth today vs what you paid
+  const dcaPerformanceData = useMemo(() => {
+    if (buyPoints.length === 0 || currentBtcPrice === 0) return [];
 
-    // Build a price map by date string
-    const priceMap = new Map<string, number>();
-    priceHistory.forEach((p) => priceMap.set(p.date, p.price));
-
-    return chartData
-      .filter((d) => priceMap.has(d.date))
-      .map((d) => ({
-        date: d.date,
-        cumulativeBtc: d.cumulativeBtc,
-        costBasis: d.costBasis,
-        portfolioValue: d.cumulativeBtc * (priceMap.get(d.date) || 0),
-        price: priceMap.get(d.date) || 0,
-      }));
-  }, [chartData, priceHistory]);
+    return buyPoints
+      .slice() // copy
+      .sort((a, b) => a.timestamp - b.timestamp) // oldest first for chart
+      .map((bp) => {
+        const paid = bp.usdCost;
+        const currentValue = bp.btcAmount * currentBtcPrice;
+        const pnl = currentValue - paid;
+        const pnlPct = paid > 0 ? (pnl / paid) * 100 : 0;
+        return {
+          date: bp.date,
+          btcAmount: bp.btcAmount,
+          paid,
+          currentValue,
+          pnl,
+          pnlPct,
+        };
+      });
+  }, [buyPoints, currentBtcPrice]);
 
   // Combined totals (CSV + manual holdings) — must be before any useMemo that references them
   const combinedBtc = totalBtc + MANUAL_BTC_TOTAL;
@@ -1607,36 +1611,26 @@ export default function Home() {
               </div>
             </Card>
 
-            {/* Cumulative Investment vs Portfolio Value */}
+            {/* DCA Performance Chart */}
             <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6 mb-4 sm:mb-8">
-              <h3 className="text-sm sm:text-lg font-semibold mb-1">Cumulative Investment vs Portfolio Value</h3>
+              <h3 className="text-sm sm:text-lg font-semibold mb-1">DCA Performance</h3>
               <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 mb-4">
-                How much you've put in vs what it's worth — the gap shows your P&L
+                Each buy — what you paid vs what it's worth today. Sorted oldest → newest.
               </p>
-              {investmentVsValueData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={isMobile ? 260 : 340}>
-                  <ComposedChart data={investmentVsValueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="investedGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#4ade80" stopOpacity={0.1} />
-                        <stop offset="100%" stopColor="#4ade80" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="valueGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f7931a" stopOpacity={0.15} />
-                        <stop offset="100%" stopColor="#f7931a" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
+              {dcaPerformanceData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={isMobile ? 300 : 380}>
+                  <ComposedChart data={dcaPerformanceData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" />
                     <XAxis
                       dataKey="date"
                       stroke="#888"
-                      fontSize={10}
+                      fontSize={9}
                       tickFormatter={(val: string) => {
                         const parts = val.split("-");
                         return `${parts[1]}/${parts[2]}`;
                       }}
                       interval="preserveStartEnd"
-                      minTickGap={50}
+                      minTickGap={40}
                     />
                     <YAxis
                       stroke="#888"
@@ -1646,37 +1640,46 @@ export default function Home() {
                     <Tooltip
                       contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139", fontSize: 12, borderRadius: 8 }}
                       formatter={(value: any, name: string) => {
-                        if (name === "Invested ($)") return [fmtUsd(value), "Invested ($)"];
-                        if (name === "Portfolio Value ($)") return [fmtUsd(value), "Portfolio Value ($)"];
-                        return [fmtUsd(value), name];
+                        if (name === "Paid ($)") return [fmtUsd(value), "Paid ($)"];
+                        if (name === "Current Value ($)") return [fmtUsd(value), "Current Value ($)"];
+                        if (name === "P&L ($)") return [fmtUsd(value), "P&L ($)"];
+                        return [value, name];
                       }}
                     />
                     <Legend />
-                    <Area
-                      type="monotone"
-                      dataKey="costBasis"
-                      fill="url(#investedGrad)"
-                      stroke="#4ade80"
-                      strokeWidth={2}
-                      dot={false}
-                      name="Invested ($)"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="portfolioValue"
-                      fill="url(#valueGrad)"
-                      stroke="#f7931a"
-                      strokeWidth={2}
-                      dot={false}
-                      name="Portfolio Value ($)"
-                    />
+                    <Bar dataKey="paid" fill="#4ade80" fillOpacity={0.7} name="Paid ($)" radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="currentValue" fill="#f7931a" fillOpacity={0.85} name="Current Value ($)" radius={[2, 2, 0, 0]} />
                   </ComposedChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="flex items-center justify-center h-[260px] text-gray-500 text-sm">
-                  No data available yet. Import a CSV with USD purchases to see this chart.
+                  No buy data yet. Import a CSV to see DCA performance.
                 </div>
               )}
+              {/* Best / Worst buys summary */}
+              {dcaPerformanceData.length > 0 && (() => {
+                const sorted = [...dcaPerformanceData].sort((a, b) => b.pnlPct - a.pnlPct);
+                const best = sorted[0];
+                const worst = sorted[sorted.length - 1];
+                return (
+                  <div className="flex flex-col sm:flex-row gap-3 mt-4 pt-4 border-t border-[#2d3139]">
+                    <div className="flex-1 p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                      <p className="text-[10px] text-gray-500 mb-1">Best Entry</p>
+                      <p className="text-xs font-semibold text-white">{best.date}</p>
+                      <p className="text-[10px] text-[#00b96b] mt-0.5">
+                        +{best.pnlPct.toFixed(1)}% · {best.btcAmount.toFixed(4)} BTC
+                      </p>
+                    </div>
+                    <div className="flex-1 p-3 rounded-lg bg-[#0b0e11] border border-[#2d3139]">
+                      <p className="text-[10px] text-gray-500 mb-1">Worst Entry</p>
+                      <p className="text-xs font-semibold text-white">{worst.date}</p>
+                      <p className={`text-[10px] mt-0.5 ${worst.pnlPct >= 0 ? "text-[#00b96b]" : "text-[#f6465d]"}`}>
+                        {worst.pnlPct >= 0 ? "+" : ""}{worst.pnlPct.toFixed(1)}% · {worst.btcAmount.toFixed(4)} BTC
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
             </Card>
 
             {/* Transaction Table */}
