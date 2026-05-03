@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Scatter, Area,
+  PieChart, Pie, Cell,
 } from "recharts";
 import { useIsMobile } from "@/hooks/useMobile";
 import { supabase, PORTFOLIO_USER_ID } from "@/lib/supabase";
@@ -716,6 +717,60 @@ export default function Home() {
     return priceTrendData.filter((p) => p.buyPrice !== null).length;
   }, [priceTrendData]);
 
+  // Cumulative Investment vs Portfolio Value chart data
+  const investmentVsValueData = useMemo(() => {
+    if (chartData.length === 0 || priceHistory.length === 0) return [];
+
+    // Build a price map by date string
+    const priceMap = new Map<string, number>();
+    priceHistory.forEach((p) => priceMap.set(p.date, p.price));
+
+    return chartData
+      .filter((d) => priceMap.has(d.date))
+      .map((d) => ({
+        date: d.date,
+        cumulativeBtc: d.cumulativeBtc,
+        costBasis: d.costBasis,
+        portfolioValue: d.cumulativeBtc * (priceMap.get(d.date) || 0),
+        price: priceMap.get(d.date) || 0,
+      }));
+  }, [chartData, priceHistory]);
+
+  // Portfolio allocation data for donut chart
+  const allocationData = useMemo(() => {
+    if (portfolioValue === 0) return [];
+
+    const btcVal = combinedBtc * currentBtcPrice;
+    const ethVal = combinedEth * currentEthPrice;
+    const solVal = combinedSol * currentSolPrice;
+
+    const slices: { name: string; value: number; color: string }[] = [];
+
+    // BTC slices by source
+    if (totalBtc * currentBtcPrice > 0) {
+      slices.push({ name: "BTC (CSV)", value: totalBtc * currentBtcPrice, color: "#f7931a" });
+    }
+    if (MANUAL_BTC_TOTAL * currentBtcPrice > 0) {
+      // Further split by exchange
+      const hkBtcVal = (MANUAL_BTC.find(h => h.exchange === "Hashkey")?.amount || 0) * currentBtcPrice;
+      const okxBtcVal = (MANUAL_BTC.find(h => h.exchange === "OKX")?.amount || 0) * currentBtcPrice;
+      if (hkBtcVal > 0) slices.push({ name: "BTC (Hashkey)", value: hkBtcVal, color: "#c67d2e" });
+      if (okxBtcVal > 0) slices.push({ name: "BTC (OKX)", value: okxBtcVal, color: "#a0631f" });
+    }
+
+    // ETH
+    if (combinedEth * currentEthPrice > 0) {
+      slices.push({ name: "ETH", value: ethVal, color: "#627eea" });
+    }
+
+    // SOL
+    if (combinedSol * currentSolPrice > 0) {
+      slices.push({ name: "SOL", value: solVal, color: "#9945ff" });
+    }
+
+    return slices;
+  }, [portfolioValue, combinedBtc, totalBtc, currentBtcPrice, combinedEth, currentEthPrice, combinedSol, currentSolPrice]);
+
   // Combined totals (CSV + manual holdings)
   const combinedBtc = totalBtc + MANUAL_BTC_TOTAL;
   const combinedBtcCost = totalUsdSpent + MANUAL_BTC_COST;
@@ -1325,6 +1380,71 @@ export default function Home() {
               </Card>
             </div>
 
+            {/* Portfolio Allocation Pie Chart - Donut */}
+            <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6 mb-4 sm:mb-8">
+              <h3 className="text-sm sm:text-lg font-semibold mb-1">Portfolio Allocation</h3>
+              <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 mb-4">Distribution by asset and exchange</p>
+              {portfolioValue > 0 ? (
+                <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8">
+                  {/* Donut chart */}
+                  <div className="relative">
+                    <ResponsiveContainer width={180} height={180}>
+                      <PieChart>
+                        <Pie
+                          data={allocationData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={55}
+                          outerRadius={80}
+                          paddingAngle={2}
+                          dataKey="value"
+                        >
+                          {allocationData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139", fontSize: 12, borderRadius: 8 }}
+                          formatter={(value: any, name: string) => [
+                            fmtUsd(value),
+                            name,
+                          ]}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    {/* Center label */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-[10px] text-gray-400">Total</span>
+                      <span className="text-sm font-bold text-white">{fmtUsdInt(portfolioValue)}</span>
+                    </div>
+                  </div>
+
+                  {/* Legend */}
+                  <div className="flex-1 w-full space-y-2">
+                    {allocationData.map((entry) => {
+                      const pct = portfolioValue > 0 ? ((entry.value / portfolioValue) * 100).toFixed(1) : "0.0";
+                      return (
+                        <div key={entry.name} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
+                            <span className="text-xs text-gray-300">{entry.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-white">{fmtUsdInt(entry.value)}</span>
+                            <span className="text-[10px] text-gray-500 w-12 text-right">{pct}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-[140px] text-gray-500 text-sm">
+                  No portfolio data yet. Import a CSV to see allocation.
+                </div>
+              )}
+            </Card>
+
             {/* BTC Price Trend Chart with Buy Markers - Full Width */}
             <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6 mb-4 sm:mb-8">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2 sm:mb-4">
@@ -1488,6 +1608,78 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
+            </Card>
+
+            {/* Cumulative Investment vs Portfolio Value */}
+            <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6 mb-4 sm:mb-8">
+              <h3 className="text-sm sm:text-lg font-semibold mb-1">Cumulative Investment vs Portfolio Value</h3>
+              <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 mb-4">
+                How much you've put in vs what it's worth — the gap shows your P&L
+              </p>
+              {investmentVsValueData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={isMobile ? 260 : 340}>
+                  <ComposedChart data={investmentVsValueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="investedGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#4ade80" stopOpacity={0.1} />
+                        <stop offset="100%" stopColor="#4ade80" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="valueGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f7931a" stopOpacity={0.15} />
+                        <stop offset="100%" stopColor="#f7931a" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" />
+                    <XAxis
+                      dataKey="date"
+                      stroke="#888"
+                      fontSize={10}
+                      tickFormatter={(val: string) => {
+                        const parts = val.split("-");
+                        return `${parts[1]}/${parts[2]}`;
+                      }}
+                      interval="preserveStartEnd"
+                      minTickGap={50}
+                    />
+                    <YAxis
+                      stroke="#888"
+                      fontSize={10}
+                      tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139", fontSize: 12, borderRadius: 8 }}
+                      formatter={(value: any, name: string) => {
+                        if (name === "Invested ($)") return [fmtUsd(value), "Invested ($)"];
+                        if (name === "Portfolio Value ($)") return [fmtUsd(value), "Portfolio Value ($)"];
+                        return [fmtUsd(value), name];
+                      }}
+                    />
+                    <Legend />
+                    <Area
+                      type="monotone"
+                      dataKey="costBasis"
+                      fill="url(#investedGrad)"
+                      stroke="#4ade80"
+                      strokeWidth={2}
+                      dot={false}
+                      name="Invested ($)"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="portfolioValue"
+                      fill="url(#valueGrad)"
+                      stroke="#f7931a"
+                      strokeWidth={2}
+                      dot={false}
+                      name="Portfolio Value ($)"
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[260px] text-gray-500 text-sm">
+                  No data available yet. Import a CSV with USD purchases to see this chart.
+                </div>
+              )}
             </Card>
 
             {/* Transaction Table */}
