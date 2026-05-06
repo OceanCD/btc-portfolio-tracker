@@ -1592,20 +1592,30 @@ export default function Home() {
                       <th className="text-left py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm">Month</th>
                       <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm">BTC</th>
                       <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm">Cost</th>
-                      <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm">Avg Price</th>
+                      <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm">Value</th>
+                      <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm">P&L</th>
+                      <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm hidden sm:table-cell">Avg Price</th>
                       <th className="text-right py-2 sm:py-3 px-2 sm:px-4 text-gray-400 text-xs sm:text-sm hidden sm:table-cell">Cumulative</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {monthlyData.map((row, idx) => (
-                      <tr key={idx} className="border-b border-[#2d3139] hover:bg-[#2d3139] transition-colors">
-                        <td className="py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm">{row.month}</td>
-                        <td className="text-right py-2 sm:py-3 px-2 sm:px-4 text-[#f7931a] text-xs sm:text-sm">{row.btcBought.toFixed(4)}</td>
-                        <td className="text-right py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm">{fmtUsd(row.totalCost)}</td>
-                        <td className="text-right py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm">{fmtUsd(row.avgPrice)}</td>
-                        <td className="text-right py-2 sm:py-3 px-2 sm:px-4 font-semibold text-xs sm:text-sm hidden sm:table-cell">{row.cumulativeBtc.toFixed(6)}</td>
-                      </tr>
-                    ))}
+                    {monthlyData.map((row, idx) => {
+                      const monthValue = row.btcBought * currentBtcPrice;
+                      const monthPnl = monthValue - row.totalCost;
+                      const monthPnlPct = row.totalCost > 0 ? (monthPnl / row.totalCost) * 100 : 0;
+                      const pnlUp = monthPnl >= 0;
+                      return (
+                        <tr key={idx} className="border-b border-[#2d3139] hover:bg-[#2d3139] transition-colors">
+                          <td className="py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm">{row.month}</td>
+                          <td className="text-right py-2 sm:py-3 px-2 sm:px-4 text-[#f7931a] text-xs sm:text-sm">{row.btcBought.toFixed(4)}</td>
+                          <td className="text-right py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm">{fmtUsd(row.totalCost)}</td>
+                          <td className={`text-right py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm ${pnlUp ? "text-[#00b96b]" : "text-[#f6465d]"}`}>{fmtUsd(monthValue)}</td>
+                          <td className={`text-right py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm ${pnlUp ? "text-[#00b96b]" : "text-[#f6465d]"}`}>{pnlUp ? "+" : "-"}{Math.abs(monthPnlPct).toFixed(1)}%</td>
+                          <td className="text-right py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm hidden sm:table-cell">{fmtUsd(row.avgPrice)}</td>
+                          <td className="text-right py-2 sm:py-3 px-2 sm:px-4 font-semibold text-xs sm:text-sm hidden sm:table-cell">{row.cumulativeBtc.toFixed(6)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
