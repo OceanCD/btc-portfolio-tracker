@@ -1657,7 +1657,7 @@ export default function Home() {
                   </div>
                   {dcaChartView === "pnl" ? (
                     <ResponsiveContainer width="100%" height={isMobile ? 300 : 380}>
-                      <ComposedChart data={dcaPerformanceData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <ComposedChart data={dcaPerformanceData} margin={{ top: 10, right: 40, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" />
                         <XAxis
                           dataKey="date"
@@ -1671,15 +1671,23 @@ export default function Home() {
                           minTickGap={40}
                         />
                         <YAxis
-                          stroke="#888"
+                          stroke="#00b96b"
                           fontSize={10}
                           tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+                          yAxisId="pnl"
+                        />
+                        <YAxis
+                          orientation="right"
+                          stroke="#f7931a"
+                          fontSize={10}
+                          tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                          yAxisId="price"
                         />
                         <Tooltip
                           contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139", fontSize: 12, borderRadius: 8 }}
                           formatter={(value: any, name: string) => {
                             if (name === "P&L %") return [`${value.toFixed(1)}%`, "P&L %"];
-                            if (name === "BTC Price ($)") return [`$${value.toLocaleString("en-US", { minimumFractionDigits: 0 })}`, "BTC Price ($)"];
+                            if (name === "Entry Price") return [`$${value.toLocaleString("en-US")}`, "Entry Price"];
                             return [value, name];
                           }}
                         />
@@ -1692,6 +1700,7 @@ export default function Home() {
                           dot={{ fill: "#00b96b", r: 3 }}
                           activeDot={{ r: 5 }}
                           name="P&L %"
+                          yAxisId="pnl"
                         />
                         <Line
                           type="monotone"
@@ -1701,7 +1710,8 @@ export default function Home() {
                           strokeDasharray="4 3"
                           dot={false}
                           activeDot={{ r: 4 }}
-                          name="BTC Price ($)"
+                          name="Entry Price"
+                          yAxisId="price"
                         />
                       </ComposedChart>
                     </ResponsiveContainer>
