@@ -1733,7 +1733,6 @@ export default function Home() {
                             if (name === "BTC Amount") return [`${value.toFixed(4)} BTC`, "BTC Amount"];
                             return [value, name];
                           }}
-                          payload={dcaPerformanceData.map((d) => ({ payload: d }))}
                         />
                         <Scatter
                           data={dcaPerformanceData}
@@ -1744,7 +1743,7 @@ export default function Home() {
                             <Cell
                               key={`cell-${index}`}
                               fill={entry.pnlPct >= 0 ? "#00b96b" : "#f6465d"}
-                              fillOpacity={0.75}
+                              fillOpacity={0.8}
                             />
                           ))}
                         </Scatter>
