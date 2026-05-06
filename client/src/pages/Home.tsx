@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Scatter, Area,
-  PieChart, Pie, Cell,
+  PieChart, Pie, Cell, ScatterChart, ZAxis,
 } from "recharts";
 import { useIsMobile } from "@/hooks/useMobile";
 import { supabase, PORTFOLIO_USER_ID } from "@/lib/supabase";
@@ -206,6 +206,7 @@ export default function Home() {
   const [chartRange, setChartRange] = useState<ChartRange>("6M");
 
   // Transaction table state
+  const [dcaChartView, setDcaChartView] = useState<"pnl" | "scatter">("pnl");
   const [txSortField, setTxSortField] = useState<SortField>("date");
   const [txSortDir, setTxSortDir] = useState<SortDir>("desc");
   const [txFilters, setTxFilters] = useState<Record<SortField, string>>({
@@ -736,6 +737,7 @@ export default function Home() {
           currentValue,
           pnl,
           pnlPct,
+          price: bp.price,  // BTC price at time of buy
         };
       });
   }, [buyPoints, currentBtcPrice]);
@@ -1625,42 +1627,131 @@ export default function Home() {
             <Card className="bg-[#1e2329] border-[#2d3139] p-3 sm:p-6 mb-4 sm:mb-8">
               <h3 className="text-sm sm:text-lg font-semibold mb-1">DCA Performance</h3>
               <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 mb-4">
-                Each buy — what you paid vs what it's worth today. Sorted oldest → newest.
+                Each buy — P&L % over time vs BTC price at time of buy.
               </p>
               {dcaPerformanceData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={isMobile ? 300 : 380}>
-                  <ComposedChart data={dcaPerformanceData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" />
-                    <XAxis
-                      dataKey="date"
-                      stroke="#888"
-                      fontSize={9}
-                      tickFormatter={(val: string) => {
-                        const parts = val.split("-");
-                        return `${parts[1]}/${parts[2]}`;
-                      }}
-                      interval="preserveStartEnd"
-                      minTickGap={40}
-                    />
-                    <YAxis
-                      stroke="#888"
-                      fontSize={10}
-                      tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139", fontSize: 12, borderRadius: 8 }}
-                      formatter={(value: any, name: string) => {
-                        if (name === "Paid ($)") return [fmtUsd(value), "Paid ($)"];
-                        if (name === "Current Value ($)") return [fmtUsd(value), "Current Value ($)"];
-                        if (name === "P&L ($)") return [fmtUsd(value), "P&L ($)"];
-                        return [value, name];
-                      }}
-                    />
-                    <Legend />
-                    <Bar dataKey="paid" fill="#4ade80" fillOpacity={0.7} name="Paid ($)" radius={[2, 2, 0, 0]} />
-                    <Bar dataKey="currentValue" fill="#f7931a" fillOpacity={0.85} name="Current Value ($)" radius={[2, 2, 0, 0]} />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                <>
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="flex items-center gap-1 bg-[#0b0e11] rounded-lg p-1">
+                      <button
+                        onClick={() => setDcaChartView("pnl")}
+                        className={`px-3 py-1 rounded text-[10px] sm:text-xs font-medium transition-colors ${
+                          dcaChartView === "pnl"
+                            ? "bg-[#f7931a] text-black"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        P&L % Over Time
+                      </button>
+                      <button
+                        onClick={() => setDcaChartView("scatter")}
+                        className={`px-3 py-1 rounded text-[10px] sm:text-xs font-medium transition-colors ${
+                          dcaChartView === "scatter"
+                            ? "bg-[#f7931a] text-black"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        Entry vs Return
+                      </button>
+                    </div>
+                  </div>
+                  {dcaChartView === "pnl" ? (
+                    <ResponsiveContainer width="100%" height={isMobile ? 300 : 380}>
+                      <ComposedChart data={dcaPerformanceData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" />
+                        <XAxis
+                          dataKey="date"
+                          stroke="#888"
+                          fontSize={9}
+                          tickFormatter={(val: string) => {
+                            const parts = val.split("-");
+                            return `${parts[1]}/${parts[2]}`;
+                          }}
+                          interval="preserveStartEnd"
+                          minTickGap={40}
+                        />
+                        <YAxis
+                          stroke="#888"
+                          fontSize={10}
+                          tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139", fontSize: 12, borderRadius: 8 }}
+                          formatter={(value: any, name: string) => {
+                            if (name === "P&L %") return [`${value.toFixed(1)}%`, "P&L %"];
+                            if (name === "BTC Price ($)") return [`$${value.toLocaleString("en-US", { minimumFractionDigits: 0 })}`, "BTC Price ($)"];
+                            return [value, name];
+                          }}
+                        />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="pnlPct"
+                          stroke="#00b96b"
+                          strokeWidth={2}
+                          dot={{ fill: "#00b96b", r: 3 }}
+                          activeDot={{ r: 5 }}
+                          name="P&L %"
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="price"
+                          stroke="#f7931a"
+                          strokeWidth={1.5}
+                          strokeDasharray="4 3"
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                          name="BTC Price ($)"
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={isMobile ? 300 : 380}>
+                      <ScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#2d3139" />
+                        <XAxis
+                          dataKey="price"
+                          stroke="#888"
+                          fontSize={10}
+                          name="Entry Price"
+                          tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                          type="number"
+                          domain={["auto", "auto"]}
+                        />
+                        <YAxis
+                          dataKey="pnlPct"
+                          stroke="#888"
+                          fontSize={10}
+                          name="P&L %"
+                          tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: "#1e2329", border: "1px solid #2d3139", fontSize: 12, borderRadius: 8 }}
+                          formatter={(value: any, name: string) => {
+                            if (name === "Entry Price") return [`$${value.toLocaleString("en-US")}`, "Entry Price"];
+                            if (name === "P&L %") return [`${value.toFixed(1)}%`, "P&L %"];
+                            if (name === "BTC Amount") return [`${value.toFixed(4)} BTC`, "BTC Amount"];
+                            return [value, name];
+                          }}
+                          payload={dcaPerformanceData.map((d) => ({ payload: d }))}
+                        />
+                        <Scatter
+                          data={dcaPerformanceData}
+                          fill="#f7931a"
+                          name="Buy"
+                        >
+                          {dcaPerformanceData.map((entry, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={entry.pnlPct >= 0 ? "#00b96b" : "#f6465d"}
+                              fillOpacity={0.75}
+                            />
+                          ))}
+                        </Scatter>
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  )}
+                </>
               ) : (
                 <div className="flex items-center justify-center h-[260px] text-gray-500 text-sm">
                   No buy data yet. Import a CSV to see DCA performance.
